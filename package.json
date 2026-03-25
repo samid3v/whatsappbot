@@ -1,0 +1,33 @@
+{
+  "name": "whatsapp-efootball-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp group management bot for eFootball gaming communities",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "node --import tsx src/index.ts"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "efootball",
+    "moderation",
+    "tournament"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "baileys": "^6.1.5",
+    "dotenv": "^16.4.7",
+    "node-cron": "^3.0.3",
+    "pino": "^9.1.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

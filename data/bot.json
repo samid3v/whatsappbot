@@ -1,0 +1,84 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "jid": "254713660231:49@s.whatsapp.net",
+      "name": "Bot Owner",
+      "role": "owner",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T12:10:19.458Z"
+    },
+    {
+      "id": 2,
+      "jid": "120363063964715442@g.us",
+      "name": "Mido 🎮",
+      "role": "member",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T12:13:11.320Z"
+    },
+    {
+      "id": 3,
+      "jid": "254713660231:50@s.whatsapp.net",
+      "name": "Bot Owner",
+      "role": "owner",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T12:23:57.484Z"
+    },
+    {
+      "id": 4,
+      "jid": "254103608133:1@s.whatsapp.net",
+      "name": "Bot Owner",
+      "role": "owner",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T12:41:49.292Z"
+    },
+    {
+      "id": 5,
+      "jid": "254103608133:2@s.whatsapp.net",
+      "name": "Bot Owner",
+      "role": "owner",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T13:02:57.081Z"
+    },
+    {
+      "id": 6,
+      "jid": "254103608133:3@s.whatsapp.net",
+      "name": "Bot Owner",
+      "role": "owner",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T13:20:19.877Z"
+    },
+    {
+      "id": 7,
+      "jid": "254103608133:4@s.whatsapp.net",
+      "name": "Bot Owner",
+      "role": "owner",
+      "warnings": 0,
+      "is_muted": 0,
+      "mute_expires_at": null,
+      "created_at": "2026-03-24T13:34:36.228Z"
+    }
+  ],
+  "player_stats": [],
+  "tournaments": [],
+  "tournament_participants": [],
+  "tournament_matches": [],
+  "scheduled_matches": [],
+  "polls": [],
+  "daily_challenges": [],
+  "challenge_submissions": [],
+  "settings": [],
+  "logs": []
+}
