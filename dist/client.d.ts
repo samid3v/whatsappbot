@@ -1,6 +1,6 @@
-import { // ✅ ADD THIS
-WASocket } from 'baileys';
+import makeWASocket from '@whiskeysockets/baileys';
 import { EventEmitter } from 'events';
+type WhatsAppSocket = ReturnType<typeof makeWASocket>;
 export declare class WhatsAppClient extends EventEmitter {
     private sock;
     private isConnected;
@@ -20,7 +20,7 @@ export declare class WhatsAppClient extends EventEmitter {
     addParticipant(groupJid: string, participantJid: string): Promise<any>;
     promoteParticipant(groupJid: string, participantJid: string): Promise<any>;
     demoteParticipant(groupJid: string, participantJid: string): Promise<any>;
-    getSocket(): WASocket | null;
+    getSocket(): WhatsAppSocket | null;
     isReady(): boolean;
     getjid(): string | null;
 }

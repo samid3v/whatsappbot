@@ -1,27 +1,34 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion, // ✅ ADD THIS
-  WASocket,
-} from 'baileys';
+  fetchLatestBaileysVersion,
+  proto,
+  WAMessage,
+} from '@whiskeysockets/baileys';
 import qrcodeTerminal from 'qrcode-terminal';
+import pino from 'pino';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 
-// Simple logger
-const logger = {
-  info: (...args: any[]) => console.log('[INFO]', ...args),
-  error: (...args: any[]) => console.error('[ERROR]', ...args),
-  warn: (...args: any[]) => console.warn('[WARN]', ...args),
-  debug: (...args: any[]) => console.log('[DEBUG]', ...args),
-  child: () => logger,
-  level: 'info',
-  trace: () => { },
-};
+// Suppressed logger to filter out Baileys noise
+const suppressedLogger = pino({
+  level: 'silent',
+  customLevels: {
+    trace: 0,
+    debug: 1,
+    info: 2,
+    warn: 3,
+    error: 4,
+    fatal: 5
+  }
+});
+
+// Define socket type
+type WhatsAppSocket = ReturnType<typeof makeWASocket>;
 
 export class WhatsAppClient extends EventEmitter {
-  private sock: WASocket | null = null;
+  private sock: WhatsAppSocket | null = null;
   private isConnected: boolean = false;
   private groupMetaCache: Map<string, any> = new Map();
   private pendingQR: string | null = null;
@@ -40,18 +47,18 @@ export class WhatsAppClient extends EventEmitter {
     const { version } = await fetchLatestBaileysVersion();
 
     this.sock = makeWASocket({
-      version, // ✅ CRITICAL FIX
+      version,
       auth: state,
       printQRInTerminal: false,
-      logger: logger as any,
-      browser: ['eFootball Bot', 'Chrome', '1.0.0'],
+      logger: suppressedLogger,
+      browser: ['Chrome', 'Windows', '10.0'],
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 10000,
 
-      // ✅ Stability improvements
-      syncFullHistory: true, // ✅ IMPORTANT
+      // Memory optimization: prevent loading old messages into RAM
+      syncFullHistory: false,
       markOnlineOnConnect: false,
-      shouldSyncHistoryMessage: () => true, // ✅ CRITICAL
+      getMessage: async () => undefined
     });
 
     // Handle authentication
@@ -120,12 +127,16 @@ export class WhatsAppClient extends EventEmitter {
 
     // Handle incoming messages
     this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      console.log(`📨 messages.upsert event: type=${type}, messageCount=${messages.length}`);
+
       if (type !== 'notify') return;
 
       for (const msg of messages) {
+        console.log(`📧 Processing message: key.fromMe=${msg.key.fromMe}, hasMessage=${!!msg.message}, remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}`);
+
         try {
-          // Skip if from me
-          if (msg.key.fromMe) continue;
+          // Skip messages that can't be decrypted
+          if (!msg.message) continue;
 
           // Skip messages that can't be decrypted
           if (!msg.message) continue;
@@ -135,10 +146,13 @@ export class WhatsAppClient extends EventEmitter {
 
           if (isGroup) {
             try {
+              // Fetch group metadata which helps establish sessions
               const metadata = await this.sock!.groupMetadata(jid);
               this.groupMetaCache.set(jid, metadata);
+
+              console.log(`📍 Group JID: ${jid} - Session established`);
             } catch (e) {
-              // Ignore
+              // Ignore errors here
             }
           }
 
@@ -151,6 +165,8 @@ export class WhatsAppClient extends EventEmitter {
             isMentioned: this.isMentioned(msg),
             mentionedJids: (msg.message as any)?.contextInfo?.mentionedJid || [],
           });
+
+          console.log('✅ Message emitted successfully');
         } catch (err) {
           // Skip decryption errors - these are session-related
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -165,12 +181,15 @@ export class WhatsAppClient extends EventEmitter {
     this.sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
       // When bot is added to group, send a message to establish sessions
       const botJid = this.sock?.user?.id;
-      if (action === 'add' && botJid && participants.includes(botJid)) {
-        try {
-          // Send a message to establish sender key
-          await this.sock?.sendMessage(id, { text: '👋 Bot connected! Use .help for commands.' });
-        } catch (e) {
-          console.log('Could not send join message');
+      if (action === 'add' && botJid) {
+        const isBotAdded = participants.some((p: any) => p.id === botJid);
+        if (isBotAdded) {
+          try {
+            // Send a message to establish sender key
+            await this.sock?.sendMessage(id, { text: '👋 Bot connected! Use .help for commands.' });
+          } catch (e) {
+            console.log('Could not send join message');
+          }
         }
       }
       this.emit('groupUpdate', { jid: id, participants, action });
@@ -198,22 +217,32 @@ export class WhatsAppClient extends EventEmitter {
       return await this.sock.sendMessage(jid, { text });
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
-      // If session error, try to establish session first
+      const statusCode = error?.data?.statusCode || error?.output?.statusCode;
+
+      // Handle session errors
       if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
         console.log('Session not established, attempting to establish...');
-        // Try sending a simple message to establish the session
         try {
-          // Send a presence message to establish session
-          await this.sock.sendPresenceUpdate('available', jid);
-          // Small delay to allow session establishment
-          await new Promise(resolve => setTimeout(resolve, 500));
-          // Retry sending the message
+          if (jid.endsWith('@g.us')) {
+            try {
+              await this.sock.groupMetadata(jid);
+            } catch (e) { /* ignore */ }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
           return await this.sock.sendMessage(jid, { text });
         } catch (retryError) {
           console.error('Failed to establish session:', retryError);
           throw error;
         }
       }
+
+      // Handle not-acceptable (406) - bot may not have permission or left group
+      if (statusCode === 406 || errorMsg.includes('not-acceptable')) {
+        console.log('⚠️ Cannot send to group - bot may have been removed or not allowed to send');
+        throw new Error('Cannot send to this group. The bot may have been removed or does not have permission.');
+      }
+
       throw error;
     }
   }
@@ -227,8 +256,13 @@ export class WhatsAppClient extends EventEmitter {
       if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
         console.log('Session not established for reply, attempting to establish...');
         try {
-          await this.sock.sendPresenceUpdate('available', jid);
-          await new Promise(resolve => setTimeout(resolve, 500));
+          if (jid.endsWith('@g.us')) {
+            try {
+              await this.sock.groupMetadata(jid);
+            } catch (e) { /* ignore */ }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
           return await this.sock.sendMessage(jid, { text }, { quoted: { key: { remoteJid: jid }, message: {} } });
         } catch (retryError) {
           console.error('Failed to establish session for reply:', retryError);
@@ -248,8 +282,13 @@ export class WhatsAppClient extends EventEmitter {
       if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
         console.log('Session not established for reply, attempting to establish...');
         try {
-          await this.sock.sendPresenceUpdate('available', jid);
-          await new Promise(resolve => setTimeout(resolve, 500));
+          if (jid.endsWith('@g.us')) {
+            try {
+              await this.sock.groupMetadata(jid);
+            } catch (e) { /* ignore */ }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
           return await this.sock.sendMessage(jid, { text }, { quoted: { key: { remoteJid: jid }, message: {} } });
         } catch (retryError) {
           console.error('Failed to establish session for reply:', retryError);
@@ -269,8 +308,13 @@ export class WhatsAppClient extends EventEmitter {
       if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
         console.log('Session not established for mention, attempting to establish...');
         try {
-          await this.sock.sendPresenceUpdate('available', jid);
-          await new Promise(resolve => setTimeout(resolve, 500));
+          if (jid.endsWith('@g.us')) {
+            try {
+              await this.sock.groupMetadata(jid);
+            } catch (e) { /* ignore */ }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
           return await this.sock.sendMessage(jid, { text, mentions: mentionedJids });
         } catch (retryError) {
           console.error('Failed to establish session for mention:', retryError);
@@ -316,7 +360,7 @@ export class WhatsAppClient extends EventEmitter {
     return this.sock.groupParticipantsUpdate(groupJid, [participantJid], 'demote');
   }
 
-  getSocket(): WASocket | null { return this.sock; }
+  getSocket(): WhatsAppSocket | null { return this.sock; }
   isReady(): boolean { return this.isConnected; }
   getjid(): string | null {
     if (!this.sock?.user?.id) return null;

@@ -37,21 +37,24 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.waClient = exports.WhatsAppClient = void 0;
-const baileys_1 = __importStar(require("baileys"));
+const baileys_1 = __importStar(require("@whiskeysockets/baileys"));
 const qrcode_terminal_1 = __importDefault(require("qrcode-terminal"));
+const pino_1 = __importDefault(require("pino"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const events_1 = require("events");
-// Simple logger
-const logger = {
-    info: (...args) => console.log('[INFO]', ...args),
-    error: (...args) => console.error('[ERROR]', ...args),
-    warn: (...args) => console.warn('[WARN]', ...args),
-    debug: (...args) => console.log('[DEBUG]', ...args),
-    child: () => logger,
-    level: 'info',
-    trace: () => { },
-};
+// Suppressed logger to filter out Baileys noise
+const suppressedLogger = (0, pino_1.default)({
+    level: 'silent',
+    customLevels: {
+        trace: 0,
+        debug: 1,
+        info: 2,
+        warn: 3,
+        error: 4,
+        fatal: 5
+    }
+});
 class WhatsAppClient extends events_1.EventEmitter {
     sock = null;
     isConnected = false;
@@ -67,17 +70,17 @@ class WhatsAppClient extends events_1.EventEmitter {
         const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(sessionPath);
         const { version } = await (0, baileys_1.fetchLatestBaileysVersion)();
         this.sock = (0, baileys_1.default)({
-            version, // ✅ CRITICAL FIX
+            version,
             auth: state,
             printQRInTerminal: false,
-            logger: logger,
-            browser: ['eFootball Bot', 'Chrome', '1.0.0'],
+            logger: suppressedLogger,
+            browser: ['Chrome', 'Windows', '10.0'],
             connectTimeoutMs: 60000,
             keepAliveIntervalMs: 10000,
-            // ✅ Stability improvements
-            syncFullHistory: true, // ✅ IMPORTANT
+            // Memory optimization: prevent loading old messages into RAM
+            syncFullHistory: false,
             markOnlineOnConnect: false,
-            shouldSyncHistoryMessage: () => true, // ✅ CRITICAL
+            getMessage: async () => undefined
         });
         // Handle authentication
         this.sock.ev.on('creds.update', saveCreds);
@@ -137,12 +140,14 @@ class WhatsAppClient extends events_1.EventEmitter {
         });
         // Handle incoming messages
         this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            console.log(`📨 messages.upsert event: type=${type}, messageCount=${messages.length}`);
             if (type !== 'notify')
                 return;
             for (const msg of messages) {
+                console.log(`📧 Processing message: key.fromMe=${msg.key.fromMe}, hasMessage=${!!msg.message}, remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}`);
                 try {
-                    // Skip if from me
-                    if (msg.key.fromMe)
+                    // Skip messages that can't be decrypted
+                    if (!msg.message)
                         continue;
                     // Skip messages that can't be decrypted
                     if (!msg.message)
@@ -151,11 +156,13 @@ class WhatsAppClient extends events_1.EventEmitter {
                     const isGroup = jid.endsWith('@g.us');
                     if (isGroup) {
                         try {
+                            // Fetch group metadata which helps establish sessions
                             const metadata = await this.sock.groupMetadata(jid);
                             this.groupMetaCache.set(jid, metadata);
+                            console.log(`📍 Group JID: ${jid} - Session established`);
                         }
                         catch (e) {
-                            // Ignore
+                            // Ignore errors here
                         }
                     }
                     this.emit('message', {
@@ -167,6 +174,7 @@ class WhatsAppClient extends events_1.EventEmitter {
                         isMentioned: this.isMentioned(msg),
                         mentionedJids: msg.message?.contextInfo?.mentionedJid || [],
                     });
+                    console.log('✅ Message emitted successfully');
                 }
                 catch (err) {
                     // Skip decryption errors - these are session-related
@@ -181,13 +189,16 @@ class WhatsAppClient extends events_1.EventEmitter {
         this.sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
             // When bot is added to group, send a message to establish sessions
             const botJid = this.sock?.user?.id;
-            if (action === 'add' && botJid && participants.includes(botJid)) {
-                try {
-                    // Send a message to establish sender key
-                    await this.sock?.sendMessage(id, { text: '👋 Bot connected! Use .help for commands.' });
-                }
-                catch (e) {
-                    console.log('Could not send join message');
+            if (action === 'add' && botJid) {
+                const isBotAdded = participants.some((p) => p.id === botJid);
+                if (isBotAdded) {
+                    try {
+                        // Send a message to establish sender key
+                        await this.sock?.sendMessage(id, { text: '👋 Bot connected! Use .help for commands.' });
+                    }
+                    catch (e) {
+                        console.log('Could not send join message');
+                    }
                 }
             }
             this.emit('groupUpdate', { jid: id, participants, action });
@@ -220,22 +231,30 @@ class WhatsAppClient extends events_1.EventEmitter {
         }
         catch (error) {
             const errorMsg = error?.message || String(error);
-            // If session error, try to establish session first
+            const statusCode = error?.data?.statusCode || error?.output?.statusCode;
+            // Handle session errors
             if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
                 console.log('Session not established, attempting to establish...');
-                // Try sending a simple message to establish the session
                 try {
-                    // Send a presence message to establish session
-                    await this.sock.sendPresenceUpdate('available', jid);
-                    // Small delay to allow session establishment
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    // Retry sending the message
+                    if (jid.endsWith('@g.us')) {
+                        try {
+                            await this.sock.groupMetadata(jid);
+                        }
+                        catch (e) { /* ignore */ }
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
                     return await this.sock.sendMessage(jid, { text });
                 }
                 catch (retryError) {
                     console.error('Failed to establish session:', retryError);
                     throw error;
                 }
+            }
+            // Handle not-acceptable (406) - bot may not have permission or left group
+            if (statusCode === 406 || errorMsg.includes('not-acceptable')) {
+                console.log('⚠️ Cannot send to group - bot may have been removed or not allowed to send');
+                throw new Error('Cannot send to this group. The bot may have been removed or does not have permission.');
             }
             throw error;
         }
@@ -251,8 +270,14 @@ class WhatsAppClient extends events_1.EventEmitter {
             if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
                 console.log('Session not established for reply, attempting to establish...');
                 try {
-                    await this.sock.sendPresenceUpdate('available', jid);
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    if (jid.endsWith('@g.us')) {
+                        try {
+                            await this.sock.groupMetadata(jid);
+                        }
+                        catch (e) { /* ignore */ }
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
                     return await this.sock.sendMessage(jid, { text }, { quoted: { key: { remoteJid: jid }, message: {} } });
                 }
                 catch (retryError) {
@@ -274,8 +299,14 @@ class WhatsAppClient extends events_1.EventEmitter {
             if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
                 console.log('Session not established for reply, attempting to establish...');
                 try {
-                    await this.sock.sendPresenceUpdate('available', jid);
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    if (jid.endsWith('@g.us')) {
+                        try {
+                            await this.sock.groupMetadata(jid);
+                        }
+                        catch (e) { /* ignore */ }
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
                     return await this.sock.sendMessage(jid, { text }, { quoted: { key: { remoteJid: jid }, message: {} } });
                 }
                 catch (retryError) {
@@ -297,8 +328,14 @@ class WhatsAppClient extends events_1.EventEmitter {
             if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
                 console.log('Session not established for mention, attempting to establish...');
                 try {
-                    await this.sock.sendPresenceUpdate('available', jid);
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    if (jid.endsWith('@g.us')) {
+                        try {
+                            await this.sock.groupMetadata(jid);
+                        }
+                        catch (e) { /* ignore */ }
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
                     return await this.sock.sendMessage(jid, { text, mentions: mentionedJids });
                 }
                 catch (retryError) {

@@ -30,84 +30,104 @@ class MessageHandler {
         console.log('❌ Disconnected from WhatsApp');
     }
     async handleMessage(data) {
-        const { jid, isGroup, senderJid, text } = data;
-        // Only process group messages for moderation
-        if (!isGroup)
-            return;
-        // Check if this group is allowed to use the bot
-        if (!(0, config_1.isGroupAllowed)(jid)) {
-            return;
-        }
+        console.log('🚀 handleMessage called!');
         try {
-            // Ensure user exists in database
-            const pushName = data.msg?.pushName || 'Unknown';
-            db_1.userOps.getOrCreate(senderJid, pushName);
-            // Get user role
-            const userRole = await role_manager_1.roleManager.getUserRole(senderJid);
-            // Check if user is muted
-            if (await mute_manager_1.muteManager.isMuted(senderJid)) {
-                // Delete the message silently (can't do this with Baileys, just ignore)
-                console.log(`🔇 Muted user ${senderJid} tried to send message`);
+            const { jid, isGroup, senderJid, text } = data;
+            // Debug: log all incoming messages
+            console.log(`📥 Message: "${text?.substring(0, 30)}..." from ${senderJid}, group: ${isGroup}, jid: ${jid}`);
+            // Only process group messages for moderation
+            if (!isGroup)
+                return;
+            // Check if this group is allowed to use the bot
+            if (!(0, config_1.isGroupAllowed)(jid)) {
                 return;
             }
-            // Check for link in message
-            if (text && (0, link_detector_1.shouldWarnForLink)(text, userRole)) {
-                await warn_manager_1.warnManager.warnUser(senderJid, jid, 'Link detected');
-                // Note: Can't delete message with Baileys, but we warned them
-                return;
-            }
-            // Check if it's a command
-            const command = (0, commands_1.parseCommand)(text);
-            if (!command)
-                return;
-            // Get command handler
-            const cmd = (0, commands_1.getCommand)(command.name);
-            if (!cmd) {
-                await client_1.waClient.sendMessage(jid, `❓ Unknown command: ${command.name}\nUse !help for available commands.`);
-                return;
-            }
-            // Check if user has permission
-            const permission = await this.getCommandContext(data, command.name);
-            const canExecute = await (0, commands_1.checkPermission)(permission, cmd.requiredRole);
-            if (!canExecute.allowed) {
-                if (canExecute.message) {
-                    await client_1.waClient.sendMessage(jid, canExecute.message);
-                }
-                return;
-            }
-            // Check minimum arguments
-            if (cmd.minArgs && command.args.length < cmd.minArgs) {
-                await client_1.waClient.sendMessage(jid, `📋 Usage: ${cmd.usage}`);
-                return;
-            }
-            // Execute command with error handling for session issues
             try {
-                await cmd.execute(command.args, permission);
+                // Ensure user exists in database
+                const pushName = data.msg?.pushName || 'Unknown';
+                db_1.userOps.getOrCreate(senderJid, pushName);
+                // Get user role
+                const userRole = await role_manager_1.roleManager.getUserRole(senderJid);
+                // Check if user is muted
+                if (await mute_manager_1.muteManager.isMuted(senderJid)) {
+                    // Delete the message silently (can't do this with Baileys, just ignore)
+                    console.log(`🔇 Muted user ${senderJid} tried to send message`);
+                    return;
+                }
+                // Check for link in message
+                if (text && (0, link_detector_1.shouldWarnForLink)(text, userRole)) {
+                    await warn_manager_1.warnManager.warnUser(senderJid, jid, 'Link detected');
+                    // Note: Can't delete message with Baileys, but we warned them
+                    return;
+                }
+                // Check if it's a command
+                const command = (0, commands_1.parseCommand)(text);
+                console.log(`🔍 Parsed command: ${JSON.stringify(command)}`);
+                if (!command)
+                    return;
+                // Get command handler
+                const cmd = (0, commands_1.getCommand)(command.name);
+                console.log(`📦 Command handler: ${cmd ? cmd.name : 'NOT FOUND'}`);
+                if (!cmd) {
+                    await client_1.waClient.sendMessage(jid, `❓ Unknown command: ${command.name}\nUse !help for available commands.`);
+                    return;
+                }
+                // Check if user has permission
+                const permission = await this.getCommandContext(data, command.name);
+                const canExecute = await (0, commands_1.checkPermission)(permission, cmd.requiredRole);
+                if (!canExecute.allowed) {
+                    if (canExecute.message) {
+                        await client_1.waClient.sendMessage(jid, canExecute.message);
+                    }
+                    return;
+                }
+                // Check minimum arguments
+                if (cmd.minArgs && command.args.length < cmd.minArgs) {
+                    await client_1.waClient.sendMessage(jid, `📋 Usage: ${cmd.usage}`);
+                    return;
+                }
+                // Execute command with error handling for session issues
+                try {
+                    await cmd.execute(command.args, permission);
+                }
+                catch (error) {
+                    const errorMsg = error?.message || String(error);
+                    // Check for session-related errors
+                    if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
+                        console.log('Session not established for group, attempting to establish...');
+                        try {
+                            // Try to establish session by sending a message
+                            await client_1.waClient.sendMessage(jid, '🔄 Initializing bot session...');
+                            // Retry the command
+                            await cmd.execute(command.args, permission);
+                        }
+                        catch (retryError) {
+                            console.error('Session establishment failed:', retryError);
+                            // Don't try to send message - the group may be inaccessible
+                        }
+                    }
+                    else if (errorMsg.includes('Cannot send to this group') || errorMsg.includes('not-acceptable')) {
+                        console.log('Bot cannot send to this group - may have been removed');
+                        // Don't try to send any message
+                    }
+                    else {
+                        console.error('Command execution error:', error);
+                        // Only try to send error message if we can send to this group
+                        try {
+                            await client_1.waClient.sendMessage(jid, '❌ An error occurred while executing the command.');
+                        }
+                        catch (sendError) {
+                            console.log('Cannot send error message to group');
+                        }
+                    }
+                }
             }
             catch (error) {
-                const errorMsg = error?.message || String(error);
-                // Check for session-related errors
-                if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
-                    console.log('Session not established for group, attempting to establish...');
-                    try {
-                        // Try to establish session by sending a message
-                        await client_1.waClient.sendMessage(jid, '🔄 Initializing bot session...');
-                        // Retry the command
-                        await cmd.execute(command.args, permission);
-                    }
-                    catch (retryError) {
-                        await client_1.waClient.sendMessage(jid, '⚠️ Session issue. Please wait a moment and try again.');
-                        console.error('Session establishment failed:', retryError);
-                    }
-                }
-                else {
-                    console.error('Command execution error:', error);
-                    await client_1.waClient.sendMessage(jid, '❌ An error occurred while executing the command.');
-                }
+                console.error('Error handling message:', error);
             }
         }
-        catch (error) {
-            console.error('Error handling message:', error);
+        catch (err) {
+            console.error('Outer catch:', err);
         }
     }
     async getCommandContext(data, commandName) {
