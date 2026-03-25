@@ -1,150 +1,125 @@
-import { waClient } from '../client';
-import { roleManager } from '../services/role-manager';
-import { warnManager } from '../services/warn-manager';
-import { muteManager } from '../services/mute-manager';
-import { parseCommand, getCommand, checkPermission } from './commands';
-import { shouldWarnForLink } from './link-detector';
-import { userOps } from '../database/db';
-import { CommandContext } from '../types';
-import config, { isGroupAllowed } from '../utils/config';
-
-interface MessageData {
-    msg: any;
-    jid: string;
-    isGroup: boolean;
-    senderJid: string;
-    text: string;
-    isMentioned: boolean;
-    mentionedJids: string[];
-}
-
-export class MessageHandler {
-    private initialized: boolean = false;
-
-    async initialize(): Promise<void> {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.messageHandler = exports.MessageHandler = void 0;
+const client_1 = require("../client");
+const role_manager_1 = require("../services/role-manager");
+const warn_manager_1 = require("../services/warn-manager");
+const mute_manager_1 = require("../services/mute-manager");
+const commands_1 = require("./commands");
+const link_detector_1 = require("./link-detector");
+const db_1 = require("../database/db");
+const config_1 = require("../utils/config");
+class MessageHandler {
+    initialized = false;
+    async initialize() {
         // Set up event listeners
-        waClient.on('message', this.handleMessage.bind(this));
-        waClient.on('connected', this.onConnected.bind(this));
-        waClient.on('disconnected', this.onDisconnected.bind(this));
-
+        client_1.waClient.on('message', this.handleMessage.bind(this));
+        client_1.waClient.on('connected', this.onConnected.bind(this));
+        client_1.waClient.on('disconnected', this.onDisconnected.bind(this));
         this.initialized = true;
         console.log('✅ Message handler initialized');
     }
-
-    private async onConnected(): Promise<void> {
-        const botJid = waClient.getjid();
+    async onConnected() {
+        const botJid = client_1.waClient.getjid();
         if (botJid) {
-            roleManager.setOwner(botJid);
+            role_manager_1.roleManager.setOwner(botJid);
             console.log(`👑 Bot owner set: ${botJid}`);
         }
     }
-
-    private onDisconnected(): void {
+    onDisconnected() {
         console.log('❌ Disconnected from WhatsApp');
     }
-
-    private async handleMessage(data: MessageData): Promise<void> {
+    async handleMessage(data) {
         const { jid, isGroup, senderJid, text } = data;
-
         // Only process group messages for moderation
-        if (!isGroup) return;
-
+        if (!isGroup)
+            return;
         // Check if this group is allowed to use the bot
-        if (!isGroupAllowed(jid)) {
+        if (!(0, config_1.isGroupAllowed)(jid)) {
             return;
         }
-
         try {
             // Ensure user exists in database
             const pushName = data.msg?.pushName || 'Unknown';
-            userOps.getOrCreate(senderJid, pushName);
-
+            db_1.userOps.getOrCreate(senderJid, pushName);
             // Get user role
-            const userRole = await roleManager.getUserRole(senderJid);
-
+            const userRole = await role_manager_1.roleManager.getUserRole(senderJid);
             // Check if user is muted
-            if (await muteManager.isMuted(senderJid)) {
+            if (await mute_manager_1.muteManager.isMuted(senderJid)) {
                 // Delete the message silently (can't do this with Baileys, just ignore)
                 console.log(`🔇 Muted user ${senderJid} tried to send message`);
                 return;
             }
-
             // Check for link in message
-            if (text && shouldWarnForLink(text, userRole)) {
-                await warnManager.warnUser(senderJid, jid, 'Link detected');
+            if (text && (0, link_detector_1.shouldWarnForLink)(text, userRole)) {
+                await warn_manager_1.warnManager.warnUser(senderJid, jid, 'Link detected');
                 // Note: Can't delete message with Baileys, but we warned them
                 return;
             }
-
             // Check if it's a command
-            const command = parseCommand(text);
-            if (!command) return;
-
+            const command = (0, commands_1.parseCommand)(text);
+            if (!command)
+                return;
             // Get command handler
-            const cmd = getCommand(command.name);
+            const cmd = (0, commands_1.getCommand)(command.name);
             if (!cmd) {
-                await waClient.sendMessage(jid, `❓ Unknown command: ${command.name}\nUse !help for available commands.`);
+                await client_1.waClient.sendMessage(jid, `❓ Unknown command: ${command.name}\nUse !help for available commands.`);
                 return;
             }
-
             // Check if user has permission
             const permission = await this.getCommandContext(data, command.name);
-            const canExecute = await checkPermission(permission, cmd.requiredRole);
-
+            const canExecute = await (0, commands_1.checkPermission)(permission, cmd.requiredRole);
             if (!canExecute.allowed) {
                 if (canExecute.message) {
-                    await waClient.sendMessage(jid, canExecute.message);
+                    await client_1.waClient.sendMessage(jid, canExecute.message);
                 }
                 return;
             }
-
             // Check minimum arguments
             if (cmd.minArgs && command.args.length < cmd.minArgs) {
-                await waClient.sendMessage(jid, `📋 Usage: ${cmd.usage}`);
+                await client_1.waClient.sendMessage(jid, `📋 Usage: ${cmd.usage}`);
                 return;
             }
-
             // Execute command with error handling for session issues
             try {
                 await cmd.execute(command.args, permission);
-            } catch (error: any) {
+            }
+            catch (error) {
                 const errorMsg = error?.message || String(error);
                 // Check for session-related errors
                 if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
                     console.log('Session not established for group, attempting to establish...');
                     try {
                         // Try to establish session by sending a message
-                        await waClient.sendMessage(jid, '🔄 Initializing bot session...');
+                        await client_1.waClient.sendMessage(jid, '🔄 Initializing bot session...');
                         // Retry the command
                         await cmd.execute(command.args, permission);
-                    } catch (retryError) {
-                        await waClient.sendMessage(jid, '⚠️ Session issue. Please wait a moment and try again.');
+                    }
+                    catch (retryError) {
+                        await client_1.waClient.sendMessage(jid, '⚠️ Session issue. Please wait a moment and try again.');
                         console.error('Session establishment failed:', retryError);
                     }
-                } else {
+                }
+                else {
                     console.error('Command execution error:', error);
-                    await waClient.sendMessage(jid, '❌ An error occurred while executing the command.');
+                    await client_1.waClient.sendMessage(jid, '❌ An error occurred while executing the command.');
                 }
             }
-
-        } catch (error) {
+        }
+        catch (error) {
             console.error('Error handling message:', error);
         }
     }
-
-    private async getCommandContext(data: MessageData, commandName: string): Promise<CommandContext> {
+    async getCommandContext(data, commandName) {
         const { jid, senderJid, isGroup } = data;
-
         // Get user role
-        const userRole = await roleManager.getUserRole(senderJid);
-        const isOwner = senderJid === roleManager.getOwner();
+        const userRole = await role_manager_1.roleManager.getUserRole(senderJid);
+        const isOwner = senderJid === role_manager_1.roleManager.getOwner();
         const isAdmin = userRole === 'admin' || isOwner;
         const isModerator = userRole === 'moderator' || isAdmin;
-
         // Get user info
-        const user = userOps.get(senderJid);
+        const user = db_1.userOps.get(senderJid);
         const name = user?.name || data.msg?.pushName || 'Unknown';
-
         return {
             jid,
             name,
@@ -155,11 +130,11 @@ export class MessageHandler {
             senderJid,
         };
     }
-
-    isReady(): boolean {
+    isReady() {
         return this.initialized;
     }
 }
-
-export const messageHandler = new MessageHandler();
-export default messageHandler;
+exports.MessageHandler = MessageHandler;
+exports.messageHandler = new MessageHandler();
+exports.default = exports.messageHandler;
+//# sourceMappingURL=message.js.map

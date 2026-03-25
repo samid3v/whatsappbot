@@ -244,4 +244,85 @@ export class WhatsAppClient extends EventEmitter {
     try {
       return await this.sock.sendMessage(jid, { text }, { quoted: { key: { remoteJid: jid }, message: {} } });
     } catch (error: any) {
-      const errorMsg = error?.
+      const errorMsg = error?.message || String(error);
+      if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
+        console.log('Session not established for reply, attempting to establish...');
+        try {
+          await this.sock.sendPresenceUpdate('available', jid);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          return await this.sock.sendMessage(jid, { text }, { quoted: { key: { remoteJid: jid }, message: {} } });
+        } catch (retryError) {
+          console.error('Failed to establish session for reply:', retryError);
+          throw error;
+        }
+      }
+      throw error;
+    }
+  }
+
+  async sendMention(jid: string, text: string, mentionedJids: string[]): Promise<any> {
+    if (!this.sock) return null;
+    try {
+      return await this.sock.sendMessage(jid, { text, mentions: mentionedJids });
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
+      if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
+        console.log('Session not established for mention, attempting to establish...');
+        try {
+          await this.sock.sendPresenceUpdate('available', jid);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          return await this.sock.sendMessage(jid, { text, mentions: mentionedJids });
+        } catch (retryError) {
+          console.error('Failed to establish session for mention:', retryError);
+          throw error;
+        }
+      }
+      throw error;
+    }
+  }
+
+  async getGroupMetadata(jid: string): Promise<any> {
+    if (!this.sock) return null;
+    return this.sock.groupMetadata(jid);
+  }
+
+  async getGroupAdmins(groupJid: string): Promise<string[]> {
+    try {
+      const metadata = this.groupMetaCache.get(groupJid);
+      if (!metadata?.participants) return [];
+      return metadata.participants.filter((p: any) => p.admin).map((p: any) => p.id);
+    } catch {
+      return [];
+    }
+  }
+
+  async removeParticipant(groupJid: string, participantJid: string): Promise<any> {
+    if (!this.sock) return null;
+    return this.sock.groupParticipantsUpdate(groupJid, [participantJid], 'remove');
+  }
+
+  async addParticipant(groupJid: string, participantJid: string): Promise<any> {
+    if (!this.sock) return null;
+    return this.sock.groupParticipantsUpdate(groupJid, [participantJid], 'add');
+  }
+
+  async promoteParticipant(groupJid: string, participantJid: string): Promise<any> {
+    if (!this.sock) return null;
+    return this.sock.groupParticipantsUpdate(groupJid, [participantJid], 'promote');
+  }
+
+  async demoteParticipant(groupJid: string, participantJid: string): Promise<any> {
+    if (!this.sock) return null;
+    return this.sock.groupParticipantsUpdate(groupJid, [participantJid], 'demote');
+  }
+
+  getSocket(): WASocket | null { return this.sock; }
+  isReady(): boolean { return this.isConnected; }
+  getjid(): string | null {
+    if (!this.sock?.user?.id) return null;
+    return this.sock.user.id;
+  }
+}
+
+export const waClient = new WhatsAppClient();
+export default waClient;

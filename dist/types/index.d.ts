@@ -1,22 +1,9 @@
-// User roles in the bot
 export type UserRole = 'owner' | 'admin' | 'moderator' | 'member';
-
-// Tournament types
 export type TournamentType = 'single_elimination' | 'double_elimination' | 'round_robin';
-
-// Tournament status
 export type TournamentStatus = 'setup' | 'registration' | 'in_progress' | 'completed';
-
-// Match status
 export type MatchStatus = 'pending' | 'in_progress' | 'completed';
-
-// Poll status
 export type PollStatus = 'active' | 'ended';
-
-// Challenge submission status
 export type SubmissionStatus = 'pending' | 'approved' | 'rejected';
-
-// User in the database
 export interface User {
     id: number;
     jid: string;
@@ -27,8 +14,6 @@ export interface User {
     mute_expires_at: string | null;
     created_at: string;
 }
-
-// Player stats
 export interface PlayerStats {
     id: number;
     user_jid: string;
@@ -42,8 +27,6 @@ export interface PlayerStats {
     challenge_completed: number;
     updated_at: string;
 }
-
-// Tournament
 export interface Tournament {
     id: number;
     name: string;
@@ -55,8 +38,6 @@ export interface Tournament {
     started_at: string | null;
     ended_at: string | null;
 }
-
-// Tournament participant
 export interface TournamentParticipant {
     id: number;
     tournament_id: number;
@@ -64,8 +45,6 @@ export interface TournamentParticipant {
     status: string;
     seed: number | null;
 }
-
-// Tournament match
 export interface TournamentMatch {
     id: number;
     tournament_id: number;
@@ -79,8 +58,6 @@ export interface TournamentMatch {
     status: MatchStatus;
     scheduled_at: string | null;
 }
-
-// Scheduled match
 export interface ScheduledMatch {
     id: number;
     challenger_jid: string;
@@ -89,19 +66,15 @@ export interface ScheduledMatch {
     status: MatchStatus;
     created_at: string;
 }
-
-// Poll
 export interface Poll {
     id: number;
     question: string;
-    options: string; // JSON string array
-    votes: string; // JSON string object {option: count}
+    options: string;
+    votes: string;
     created_by: string;
     ends_at: string | null;
     created_at: string;
 }
-
-// Daily challenge
 export interface DailyChallenge {
     id: number;
     challenge: string;
@@ -109,8 +82,6 @@ export interface DailyChallenge {
     date: string;
     created_at: string;
 }
-
-// Challenge submission
 export interface ChallengeSubmission {
     id: number;
     challenge_id: number;
@@ -119,18 +90,14 @@ export interface ChallengeSubmission {
     status: SubmissionStatus;
     submitted_at: string;
 }
-
-// Bot configuration
 export interface BotConfig {
     commandPrefix: string;
     warnThreshold: number;
     muteDurationHours: number;
     sessionPath: string;
     dataPath: string;
-    allowedGroups: string[]; // List of group JIDs where the bot is allowed to work
+    allowedGroups: string[];
 }
-
-// Command context
 export interface CommandContext {
     jid: string;
     name: string;
@@ -140,8 +107,6 @@ export interface CommandContext {
     isModerator: boolean;
     senderJid: string;
 }
-
-// Command definition
 export interface Command {
     name: string;
     description: string;
@@ -151,3 +116,4 @@ export interface Command {
     requiredRole?: UserRole[];
     execute: (args: string[], context: CommandContext) => Promise<void>;
 }
+//# sourceMappingURL=index.d.ts.map
