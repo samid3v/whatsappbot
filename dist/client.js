@@ -169,7 +169,7 @@ class WhatsAppClient extends events_1.EventEmitter {
                         msg,
                         jid,
                         isGroup,
-                        senderJid: msg.key.remoteJid,
+                        senderJid: isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid,
                         text: this.getMessageText(msg),
                         isMentioned: this.isMentioned(msg),
                         mentionedJids: msg.message?.contextInfo?.mentionedJid || [],
@@ -353,7 +353,15 @@ class WhatsAppClient extends events_1.EventEmitter {
     }
     async getGroupAdmins(groupJid) {
         try {
-            const metadata = this.groupMetaCache.get(groupJid);
+            // Try to get from cache first
+            let metadata = this.groupMetaCache.get(groupJid);
+            // If not in cache or cache is old, fetch fresh metadata
+            if (!metadata?.participants) {
+                if (!this.sock)
+                    return [];
+                metadata = await this.sock.groupMetadata(groupJid);
+                this.groupMetaCache.set(groupJid, metadata);
+            }
             if (!metadata?.participants)
                 return [];
             return metadata.participants.filter((p) => p.admin).map((p) => p.id);

@@ -132,10 +132,16 @@ class MessageHandler {
     }
     async getCommandContext(data, commandName) {
         const { jid, senderJid, isGroup } = data;
-        // Get user role
+        // Get user role from database
         const userRole = await role_manager_1.roleManager.getUserRole(senderJid);
         const isOwner = senderJid === role_manager_1.roleManager.getOwner();
-        const isAdmin = userRole === 'admin' || isOwner;
+        // Check WhatsApp group admin status if in a group
+        let isWhatsAppAdmin = false;
+        if (isGroup) {
+            isWhatsAppAdmin = await role_manager_1.roleManager.isGroupAdmin(jid, senderJid);
+        }
+        // User is admin if they're WhatsApp admin OR have admin role in database
+        const isAdmin = userRole === 'admin' || isWhatsAppAdmin || isOwner;
         const isModerator = userRole === 'moderator' || isAdmin;
         // Get user info
         const user = db_1.userOps.get(senderJid);
