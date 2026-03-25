@@ -124,6 +124,19 @@
       "tournaments_played": 0,
       "challenge_completed": 0,
       "updated_at": "2026-03-25T13:22:16.637Z"
+    },
+    {
+      "id": 2,
+      "user_jid": "49671498121447@lid",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "goals_scored": 0,
+      "goals_conceded": 0,
+      "tournaments_won": 0,
+      "tournaments_played": 0,
+      "challenge_completed": 0,
+      "updated_at": "2026-03-25T14:04:54.894Z"
     }
   ],
   "tournaments": [],
