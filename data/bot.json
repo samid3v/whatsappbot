@@ -106,10 +106,10 @@
       "name": "Mido 🎮",
       "role": "member",
       "warnings": 0,
-      "is_muted": 1,
-      "mute_expires_at": "2026-03-26T11:39:48.342Z",
+      "is_muted": 0,
+      "mute_expires_at": null,
       "created_at": "2026-03-25T14:02:27.753Z",
-      "muted_messages_count": 3,
+      "muted_messages_count": 2,
       "muted_spam_warning": false,
       "link_spam_count": 0,
       "link_warn_issued": false
@@ -153,8 +153,25 @@
       "updated_at": "2026-03-25T14:04:54.894Z"
     }
   ],
-  "tournaments": [],
-  "tournament_participants": [],
+  "tournaments": [
+    {
+      "id": 1,
+      "name": "giants_league",
+      "type": "single_elimination",
+      "max_players": 10,
+      "status": "registration",
+      "creator_jid": "76786180337822@lid",
+      "created_at": "2026-03-26T11:28:21.569Z"
+    }
+  ],
+  "tournament_participants": [
+    {
+      "id": 1,
+      "tournament_id": 1,
+      "user_jid": "49671498121447@lid",
+      "joined_at": "2026-03-26T11:28:57.981Z"
+    }
+  ],
   "tournament_matches": [],
   "scheduled_matches": [],
   "polls": [],
@@ -393,6 +410,30 @@
       "target_jid": "49671498121447@lid",
       "details": "Link spam - 60 minutes",
       "created_at": "2026-03-26T10:39:48.347Z"
+    },
+    {
+      "id": 30,
+      "action": "unmute",
+      "user_jid": "120363409866358526@g.us",
+      "target_jid": "49671498121447@s.whatsapp.net",
+      "details": "User was kicked - auto unmute",
+      "created_at": "2026-03-26T10:41:04.197Z"
+    },
+    {
+      "id": 31,
+      "action": "unmute",
+      "user_jid": "120363409866358526@g.us",
+      "target_jid": "49671498121447@s.whatsapp.net",
+      "details": "User was kicked - auto unmute",
+      "created_at": "2026-03-26T10:49:07.246Z"
+    },
+    {
+      "id": 32,
+      "action": "mute",
+      "user_jid": "120363409866358526@g.us",
+      "target_jid": "49671498121447@lid",
+      "details": "Link spam - 60 minutes",
+      "created_at": "2026-03-26T10:50:23.345Z"
     }
   ]
 }

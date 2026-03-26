@@ -9,6 +9,7 @@ export declare function getRoleLevel(role: UserRole): number;
 export declare function hasPermission(userRole: UserRole, requiredRole: UserRole): boolean;
 /**
  * Format WhatsApp jid to user-friendly format
+ * Handles @s.whatsapp.net, @lid, and @g.us formats
  */
 export declare function formatJid(jid: string): string;
 /**
@@ -19,6 +20,7 @@ export declare function extractMention(text: string): string | null;
 /**
  * Extract user JID from mention text or mentionedJids array
  * Takes the first valid mention from the text
+ * NOTE: Only uses mentionedJids if args actually contain an @ symbol
  */
 export declare function extractUserJidFromMention(args: string[], mentionedJids: string[]): string | null;
 /**

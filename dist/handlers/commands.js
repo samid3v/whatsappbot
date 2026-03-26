@@ -128,9 +128,34 @@ registerCommand({
             await client_1.waClient.sendMessage(context.jid, `❌ Please mention a user to mute or reply to their message!\nUsage: .mute @user [duration] [reason]`);
             return;
         }
+        // Try to get user's display name from WhatsApp group metadata
+        let userName;
+        try {
+            const user = db_1.userOps.get(userJid);
+            if (user?.name) {
+                userName = user.name;
+            }
+            else {
+                const metadata = await client_1.waClient.getGroupMetadata(context.jid);
+                const participant = metadata?.participants?.find((p) => p.id === userJid);
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
+                }
+            }
+        }
+        catch (e) {
+            // Ignore - muteManager will handle name
+        }
         const durationStr = args[1] || '60m';
         const durationMinutes = (0, helpers_1.parseDuration)(durationStr);
         const reason = args.slice(2).join(' ') || 'Violation';
+        // If we have the userName, update the user in DB so muteManager uses it
+        if (userName) {
+            const user = db_1.userOps.get(userJid);
+            if (user) {
+                user.name = userName;
+            }
+        }
         await mute_manager_1.muteManager.muteUser(userJid, context.jid, durationMinutes, reason);
     },
 });
@@ -158,6 +183,142 @@ registerCommand({
             return;
         }
         await mute_manager_1.muteManager.unmuteUser(userJid, context.jid);
+    },
+});
+// Mute Info - show mute status and time remaining
+registerCommand({
+    name: 'muteinfo',
+    aliases: ['mi'],
+    description: 'Show mute information for a user',
+    usage: '.muteinfo @user\n.muteinfo (reply to user)',
+    minArgs: 1,
+    requiredRole: ['admin'],
+    execute: async (args, context) => {
+        let userJid = null;
+        const extractedJid = (0, helpers_1.extractUserJidFromMention)(args, context.mentionedJids || []);
+        if (extractedJid) {
+            userJid = extractedJid;
+        }
+        else if (context.quotedSenderJid) {
+            userJid = context.quotedSenderJid;
+        }
+        if (!userJid) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Please mention a user!\nUsage: .muteinfo @user`);
+            return;
+        }
+        const user = db_1.userOps.get(userJid);
+        if (!user || !user.is_muted) {
+            await client_1.waClient.sendMessage(context.jid, `ℹ️ User is not muted.`);
+            return;
+        }
+        // Try to get user's display name from WhatsApp group metadata
+        let userName = user?.name;
+        if (!userName) {
+            try {
+                const metadata = await client_1.waClient.getGroupMetadata(context.jid);
+                const participant = metadata?.participants?.find((p) => p.id === userJid);
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
+                }
+            }
+            catch (e) {
+                // Ignore - use fallback
+            }
+        }
+        // Final fallback to formatted JID
+        if (!userName) {
+            userName = (0, helpers_2.formatJid)(userJid);
+        }
+        const expiresAt = user.mute_expires_at;
+        if (expiresAt) {
+            const expiryDate = new Date(expiresAt);
+            const now = new Date();
+            const remainingMs = expiryDate.getTime() - now.getTime();
+            const remainingMinutes = Math.max(0, Math.ceil(remainingMs / 60000));
+            await client_1.waClient.sendMention(context.jid, `ℹ️ *Mute Info*\n\n👤 User: ${userName}\n⏱️ Remaining: ${remainingMinutes} minutes\n🕐 Expires: ${(0, helpers_2.formatDate)(expiresAt)}`, [userJid]);
+        }
+        else {
+            await client_1.waClient.sendMention(context.jid, `ℹ️ *Mute Info*\n\n👤 User: ${userName}\n⏱️ Duration: Indefinite`, [userJid]);
+        }
+    },
+});
+// Adjust Mute Time - change remaining mute duration
+registerCommand({
+    name: 'mutetime',
+    aliases: ['mt'],
+    description: 'Adjust mute duration (extend or reduce)',
+    usage: '.mutetime @user 30m (set to 30 min)\n.mutetime @user +30m (add 30 min)\n.mutetime @user -30m (reduce 30 min)',
+    minArgs: 2,
+    requiredRole: ['admin'],
+    execute: async (args, context) => {
+        let userJid = null;
+        const extractedJid = (0, helpers_1.extractUserJidFromMention)(args, context.mentionedJids || []);
+        if (extractedJid) {
+            userJid = extractedJid;
+        }
+        else if (context.quotedSenderJid) {
+            userJid = context.quotedSenderJid;
+        }
+        if (!userJid) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Please mention a user!\nUsage: .mutetime @user <duration>`);
+            return;
+        }
+        const user = db_1.userOps.get(userJid);
+        if (!user || !user.is_muted) {
+            await client_1.waClient.sendMessage(context.jid, `ℹ️ User is not muted.`);
+            return;
+        }
+        const currentExpiry = user.mute_expires_at ? new Date(user.mute_expires_at) : null;
+        const now = new Date();
+        // Calculate current remaining time
+        let currentRemaining = 0;
+        if (currentExpiry && currentExpiry > now) {
+            currentRemaining = Math.ceil((currentExpiry.getTime() - now.getTime()) / 60000);
+        }
+        // Parse the new duration
+        const durationStr = args[1];
+        let newMinutes = 0;
+        if (durationStr.startsWith('+')) {
+            // Add time
+            const addMinutes = (0, helpers_1.parseDuration)(durationStr.substring(1));
+            newMinutes = currentRemaining + addMinutes;
+        }
+        else if (durationStr.startsWith('-')) {
+            // Reduce time
+            const subMinutes = (0, helpers_1.parseDuration)(durationStr.substring(1));
+            newMinutes = Math.max(0, currentRemaining - subMinutes);
+        }
+        else {
+            // Set absolute time
+            newMinutes = (0, helpers_1.parseDuration)(durationStr);
+        }
+        if (newMinutes <= 0) {
+            // Unmute user
+            await mute_manager_1.muteManager.unmuteUser(userJid, context.jid);
+            return;
+        }
+        // Calculate new expiry
+        const newExpiry = new Date(Date.now() + newMinutes * 60 * 1000);
+        // Update mute
+        db_1.userOps.mute(userJid, newExpiry.toISOString());
+        // Try to get user's display name from WhatsApp group metadata
+        let userName = user?.name;
+        if (!userName) {
+            try {
+                const metadata = await client_1.waClient.getGroupMetadata(context.jid);
+                const participant = metadata?.participants?.find((p) => p.id === userJid);
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
+                }
+            }
+            catch (e) {
+                // Ignore - use fallback
+            }
+        }
+        if (!userName) {
+            userName = (0, helpers_2.formatJid)(userJid);
+        }
+        await client_1.waClient.sendMention(context.jid, `⏱️ *Mute Time Adjusted*\n\n👤 User: ${userName}\n📊 Previous: ${currentRemaining} minutes\n📊 New: ${newMinutes} minutes\n🕐 Expires: ${(0, helpers_2.formatDate)(newExpiry)}`, [userJid]);
     },
 });
 // Kick
@@ -298,6 +459,34 @@ registerCommand({
         message += `📛 Name: ${metadata.subject}\n`;
         message += `👥 Members: ${metadata.participants?.length || 0}\n`;
         message += `📅 Created: ${new Date(metadata.creation * 1000).toLocaleDateString()}`;
+        await client_1.waClient.sendMessage(context.jid, message);
+    },
+});
+// Mute Help - show all mute commands
+registerCommand({
+    name: 'mutehelp',
+    aliases: ['mh', 'mutecommands', 'mc'],
+    description: 'Show all mute commands',
+    usage: '.mutehelp',
+    execute: async (args, context) => {
+        const message = `🔇 *Mute Commands*\n\n` +
+            `*.mute @user [duration] [reason]* - Mute a user\n` +
+            `  Examples:\n` +
+            `  • .mute @user 1h spam\n` +
+            `  • .mute @user 30m\n` +
+            `  • .mute @user (default 60 min)\n\n` +
+            `*.unmute @user* - Unmute a user\n` +
+            `  Example: .unmute @user\n\n` +
+            `*.muteinfo @user* (.mi) - Check mute status\n` +
+            `  Example: .mi @user\n\n` +
+            `*.mutetime @user* (.mt) - Adjust mute duration\n` +
+            `  Examples:\n` +
+            `  • .mt @user 30m (set to 30 min)\n` +
+            `  • .mt @user +15m (add 15 min)\n` +
+            `  • .mt @user -10m (reduce 10 min)\n` +
+            `  • .mt @user 0 (unmute)\n\n` +
+            `*Duration formats:* s (seconds), m (minutes), h (hours), d (days)\n` +
+            `  Examples: 30s, 15m, 2h, 1d`;
         await client_1.waClient.sendMessage(context.jid, message);
     },
 });
@@ -456,6 +645,38 @@ registerCommand({
         const myScore = parseInt(match[1], 10);
         const oppScore = parseInt(match[2], 10);
         await client_1.waClient.sendMessage(context.jid, `✅ Result: ${myScore}-${oppScore}\nWinner: ${myScore > oppScore ? context.name : 'Opponent'}`);
+    },
+});
+// Tournament Help - show all tournament commands
+registerCommand({
+    name: 'tourneyhelp',
+    aliases: ['th', 'tournamenthelp', 'tourneycmds'],
+    description: 'Show all tournament commands',
+    usage: '.tourneyhelp',
+    execute: async (args, context) => {
+        const message = `🏆 *Tournament Commands*\n\n` +
+            `*.tcr [name] [type] [max]* - Create tournament\n` +
+            `  Aliases: .tc\n` +
+            `  Examples:\n` +
+            `  • .tcr "My Tournament" se 16\n` +
+            `  • .tcr "Weekly Cup" rr\n\n` +
+            `  *Types:* se (single elimination), de (double elimination), rr (round robin)\n\n` +
+            `*.tj* - Join active tournament\n` +
+            `  Aliases: .tourneyjoin\n` +
+            `  Example: .tj\n\n` +
+            `*.tl* - Leave tournament\n` +
+            `  Aliases: .tourneyleave\n` +
+            `  Example: .tl\n\n` +
+            `*.ts* - View tournament status\n` +
+            `  Aliases: .tourneystatus\n` +
+            `  Example: .ts\n\n` +
+            `*.tb* - View tournament bracket\n` +
+            `  Aliases: .tourneybracket\n` +
+            `  Example: .tb\n\n` +
+            `*.tres [score]* - Report match result\n` +
+            `  Aliases: .tourneyresult\n` +
+            `  Example: .tres 3-1`;
+        await client_1.waClient.sendMessage(context.jid, message);
     },
 });
 // ==================== STATS COMMANDS ====================

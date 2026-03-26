@@ -23,17 +23,23 @@ class MuteManager {
         // Log the mute
         db_1.logOps.add('mute', groupJid, jid, `${reason} - ${durationMinutes} minutes`);
         // Get user name - try to get from database, or from WhatsApp group metadata
-        let userName = user?.name || (0, helpers_1.formatJid)(jid);
+        let userName = user?.name;
         // Try to get better name from WhatsApp group participants
-        try {
-            const metadata = await client_1.waClient.getGroupMetadata(groupJid);
-            const participant = metadata?.participants?.find((p) => p.id === jid);
-            if (participant?.name || participant?.notify) {
-                userName = participant.name || participant.notify;
+        if (!userName) {
+            try {
+                const metadata = await client_1.waClient.getGroupMetadata(groupJid);
+                const participant = metadata?.participants?.find((p) => p.id === jid);
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
+                }
+            }
+            catch (e) {
+                // Ignore errors getting group metadata
             }
         }
-        catch (e) {
-            // Ignore errors getting group metadata
+        // Final fallback to formatted JID
+        if (!userName) {
+            userName = (0, helpers_1.formatJid)(jid);
         }
         let message = `🔇 *User Muted*
 
@@ -89,7 +95,7 @@ class MuteManager {
         // Log the unmute
         db_1.logOps.add('unmute', groupJid, jid);
         // Get user name - try to get from database, or from WhatsApp group metadata
-        let userName = (0, helpers_1.formatJid)(jid);
+        let userName;
         // Try to get better name from WhatsApp group participants
         try {
             const user = db_1.userOps.get(jid);
@@ -99,13 +105,17 @@ class MuteManager {
             else {
                 const metadata = await client_1.waClient.getGroupMetadata(groupJid);
                 const participant = metadata?.participants?.find((p) => p.id === jid);
-                if (participant?.name || participant?.notify) {
-                    userName = participant.name || participant.notify;
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
                 }
             }
         }
         catch (e) {
             // Ignore errors getting group metadata
+        }
+        // Final fallback to formatted JID
+        if (!userName) {
+            userName = (0, helpers_1.formatJid)(jid);
         }
         let message = `🔊 *User Unmuted*\n\n`;
         message += `👤 User: ${userName}\n`;

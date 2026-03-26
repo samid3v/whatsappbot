@@ -22,9 +22,18 @@ export function hasPermission(userRole: UserRole, requiredRole: UserRole): boole
 
 /**
  * Format WhatsApp jid to user-friendly format
+ * Handles @s.whatsapp.net, @lid, and @g.us formats
  */
 export function formatJid(jid: string): string {
-    return jid.replace('@s.whatsapp.net', '').replace('@g.us', '');
+    // Handle different JID formats
+    let formatted = jid
+        .replace('@s.whatsapp.net', '')
+        .replace('@g.us', '')
+        .replace('@lid', '');
+
+    // If it looks like a phone number (starts with + or digits), keep it clean
+    // Otherwise, it's likely a LID or other format - just return as is
+    return formatted;
 }
 
 /**
@@ -43,6 +52,7 @@ export function extractMention(text: string): string | null {
 /**
  * Extract user JID from mention text or mentionedJids array
  * Takes the first valid mention from the text
+ * NOTE: Only uses mentionedJids if args actually contain an @ symbol
  */
 export function extractUserJidFromMention(args: string[], mentionedJids: string[]): string | null {
     // If args contain @mention, use it
@@ -50,8 +60,9 @@ export function extractUserJidFromMention(args: string[], mentionedJids: string[
     const extracted = extractMention(argText);
     if (extracted) return extracted;
 
-    // If mentionedJids from message exists, use first one
-    if (mentionedJids && mentionedJids.length > 0) {
+    // Only use mentionedJids if args actually contain an @ symbol (explicit mention)
+    // This prevents accidentally using stale mentionedJids from previous messages
+    if (argText.includes('@') && mentionedJids && mentionedJids.length > 0) {
         return mentionedJids[0];
     }
 

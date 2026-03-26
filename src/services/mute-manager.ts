@@ -32,17 +32,24 @@ export class MuteManager {
         logOps.add('mute', groupJid, jid, `${reason} - ${durationMinutes} minutes`);
 
         // Get user name - try to get from database, or from WhatsApp group metadata
-        let userName = user?.name || formatJid(jid);
+        let userName = user?.name;
 
         // Try to get better name from WhatsApp group participants
-        try {
-            const metadata = await waClient.getGroupMetadata(groupJid);
-            const participant = metadata?.participants?.find((p: any) => p.id === jid);
-            if (participant?.name || participant?.notify) {
-                userName = participant.name || participant.notify;
+        if (!userName) {
+            try {
+                const metadata = await waClient.getGroupMetadata(groupJid);
+                const participant = metadata?.participants?.find((p: any) => p.id === jid);
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
+                }
+            } catch (e) {
+                // Ignore errors getting group metadata
             }
-        } catch (e) {
-            // Ignore errors getting group metadata
+        }
+
+        // Final fallback to formatted JID
+        if (!userName) {
+            userName = formatJid(jid);
         }
 
         let message = `🔇 *User Muted*
@@ -110,7 +117,7 @@ export class MuteManager {
         logOps.add('unmute', groupJid, jid);
 
         // Get user name - try to get from database, or from WhatsApp group metadata
-        let userName = formatJid(jid);
+        let userName: string | undefined;
 
         // Try to get better name from WhatsApp group participants
         try {
@@ -120,12 +127,17 @@ export class MuteManager {
             } else {
                 const metadata = await waClient.getGroupMetadata(groupJid);
                 const participant = metadata?.participants?.find((p: any) => p.id === jid);
-                if (participant?.name || participant?.notify) {
-                    userName = participant.name || participant.notify;
+                if (participant?.name || participant?.notify || participant?.vname) {
+                    userName = participant.name || participant.notify || participant.vname;
                 }
             }
         } catch (e) {
             // Ignore errors getting group metadata
+        }
+        
+        // Final fallback to formatted JID
+        if (!userName) {
+            userName = formatJid(jid);
         }
 
         let message = `🔊 *User Unmuted*\n\n`;
