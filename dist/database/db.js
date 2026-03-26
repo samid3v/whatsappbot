@@ -75,9 +75,27 @@ function saveDatabase(data) {
     fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
 }
 let db = loadDatabase();
-// Auto-save every 30 seconds
+// Debounced save - won't save if a save is already pending
+let savePending = false;
+let saveTimeout = null;
+function scheduleSave() {
+    if (savePending)
+        return; // Already scheduled
+    savePending = true;
+    saveTimeout = setTimeout(() => {
+        saveDatabase(db);
+        savePending = false;
+        saveTimeout = null;
+    }, 1000); // Save after 1 second of inactivity
+}
+// Auto-save every 30 seconds anyway (in case we miss something)
 setInterval(() => {
     saveDatabase(db);
+    savePending = false;
+    if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        saveTimeout = null;
+    }
 }, 30000);
 // Helper function to find user by JID or phone number
 function findUserByJid(jid) {
@@ -206,7 +224,7 @@ exports.userOps = {
             user.muted_spam_warning = false;
         }
         user.muted_messages_count = (user.muted_messages_count || 0) + 1;
-        saveDatabase(db);
+        scheduleSave(); // Use debounced save instead of immediate
         console.log(`[incrementMutedMessageCount] jid=${jid}, new count=${user.muted_messages_count}`);
         return user.muted_messages_count;
     },

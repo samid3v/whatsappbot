@@ -55,8 +55,8 @@ export class MuteManager {
         message += `⚠️ *Your messages will be deleted while muted!*\n`;
         message += `🚫 Repeated messages may result in removal from group.`;
 
-        // Send mute message to group
-        await waClient.sendMessage(groupJid, message);
+        // Send mute message to group with mention
+        await waClient.sendMention(groupJid, message, [jid]);
 
         // Set auto-unmute timer
         const timer = setTimeout(async () => {
@@ -132,8 +132,8 @@ export class MuteManager {
         message += `👤 User: ${userName}\n`;
         message += `✅ The user can now send messages again.`;
 
-        // Send unmute message to group
-        await waClient.sendMessage(groupJid, message);
+        // Send unmute message to group with mention
+        await waClient.sendMention(groupJid, message, [jid]);
 
         return {
             success: true,

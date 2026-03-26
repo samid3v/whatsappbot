@@ -10,6 +10,8 @@ import pino from 'pino';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
+import { userOps } from './database/db';
+import { formatJid } from './utils/helpers';
 
 // Suppressed logger to filter out Baileys noise
 const suppressedLogger = pino({
@@ -186,6 +188,57 @@ export class WhatsAppClient extends EventEmitter {
     this.sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
       // When bot is added to group, send a message to establish sessions
       const botJid = this.sock?.user?.id;
+
+      // Handle new members joining (welcome)
+      if (action === 'add') {
+        for (const participant of participants) {
+          // Don't welcome the bot itself
+          if (participant.id !== botJid) {
+            try {
+              const userName = participant.name || participant.notify || formatJid(participant.id);
+              const welcomeMsg = `🎮 *Welcome to Gaming Hub!* \n\n` +
+                `Hey @${formatJid(participant.id)}! 👋\n\n` +
+                `📱 You're now part of our eFootball community!\n\n` +
+                `🎯 *What you can do:*\n` +
+                `• Request friendlies - use .request or .challenge\n` +
+                `• Join tournaments - use .tournament\n` +
+                `• Check your stats - use .stats\n` +
+                `• Compete on the leaderboard - use .leaderboard\n\n` +
+                `⚽ Let's play some eFootball!`;
+
+              await this.sendMention(id, welcomeMsg, [participant.id]);
+
+              // Create user in database
+              userOps.getOrCreate(participant.id, userName);
+
+              console.log(`[Welcome] New member joined: ${participant.id}`);
+            } catch (e) {
+              console.log('[Welcome] Could not send welcome message:', e);
+            }
+          }
+        }
+      }
+
+      // Handle members leaving (goodbye)
+      if (action === 'remove') {
+        for (const participant of participants) {
+          try {
+            const userName = participant.name || participant.notify || formatJid(participant.id);
+            const goodbyeMsg = `👋 *Goodbye!* \n\n` +
+              `@${formatJid(participant.id)} has left the group.\n\n` +
+              `Hope you enjoyed your time in Gaming Hub! 🎮\n` +
+              `You're always welcome to join again!`;
+
+            await this.sendMention(id, goodbyeMsg, [participant.id]);
+
+            console.log(`[Goodbye] Member left: ${participant.id}`);
+          } catch (e) {
+            console.log('[Goodbye] Could not send goodbye message:', e);
+          }
+        }
+      }
+
+      // When bot is added to group, send a message to establish sessions
       if (action === 'add' && botJid) {
         const isBotAdded = participants.some((p: any) => p.id === botJid);
         if (isBotAdded) {

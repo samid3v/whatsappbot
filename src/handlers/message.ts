@@ -104,7 +104,7 @@ export class MessageHandler {
                             // Clear mute data since user is kicked
                             userOps.unmute(senderJid);
                             userOps.clearMutedSpamData(senderJid);
-                            await waClient.sendMessage(jid, `🚫 *User Kicked*\n\n👤 User: ${userName}\n\n⚠️ Removed from group for sending ${messageCount} messages while muted.`);
+                            await waClient.sendMention(jid, `🚫 *User Kicked*\n\n@${formatJid(senderJid)}\n\n⚠️ Removed from group for sending ${messageCount} messages while muted.`, [senderJid]);
                         } catch (e) {
                             console.log('Could not kick user:', e);
                             await waClient.sendMessage(jid, `⚠️ ${userName} has been muted ${messageCount} times and should be removed manually.`);
@@ -113,7 +113,7 @@ export class MessageHandler {
                         // Warn the user about being kicked
                         const remaining = 5 - messageCount;
                         console.log(`[MuteSpam] Warning user ${senderJid} - ${remaining} messages until kick`);
-                        await waClient.sendMessage(jid, `⚠️ *Mute Warning*\n\n👤 ${user?.name || formatJid(senderJid)}\n\nYou have sent ${messageCount} messages while muted.\n${remaining} more messages will result in removal from the group!\n\nPlease respect the mute.`);
+                        await waClient.sendMention(jid, `⚠️ *Mute Warning*\n\n@${formatJid(senderJid)}\n\nYou have sent ${messageCount} messages while muted.\n${remaining} more messages will result in removal from the group!\n\nPlease respect the mute.`, [senderJid]);
                     }
 
                     return;
