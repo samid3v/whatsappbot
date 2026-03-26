@@ -156,6 +156,10 @@ export class WhatsAppClient extends EventEmitter {
             }
           }
 
+          const contextInfo = (msg.message as any)?.contextInfo;
+          const quotedSenderJid = contextInfo?.quotedMessage?.key?.participant ||
+            (contextInfo?.participant ? contextInfo.participant.replace('@', '') + '@s.whatsapp.net' : undefined);
+
           this.emit('message', {
             msg,
             jid,
@@ -163,7 +167,8 @@ export class WhatsAppClient extends EventEmitter {
             senderJid: isGroup ? (msg.key.participant || msg.key.remoteJid!) : msg.key.remoteJid!,
             text: this.getMessageText(msg),
             isMentioned: this.isMentioned(msg),
-            mentionedJids: (msg.message as any)?.contextInfo?.mentionedJid || [],
+            mentionedJids: contextInfo?.mentionedJid || [],
+            quotedSenderJid,
           });
 
           console.log('✅ Message emitted successfully');
@@ -367,6 +372,17 @@ export class WhatsAppClient extends EventEmitter {
   async demoteParticipant(groupJid: string, participantJid: string): Promise<any> {
     if (!this.sock) return null;
     return this.sock.groupParticipantsUpdate(groupJid, [participantJid], 'demote');
+  }
+
+  async deleteMessage(jid: string, key: any): Promise<any> {
+    // Delete a message from the group
+    if (!this.sock) return null;
+    try {
+      return await this.sock.sendMessage(jid, { delete: key });
+    } catch (error) {
+      console.log('[deleteMessage] Error:', error);
+      return null;
+    }
   }
 
   getSocket(): WhatsAppSocket | null { return this.sock; }

@@ -20,6 +20,7 @@ export declare class WhatsAppClient extends EventEmitter {
     addParticipant(groupJid: string, participantJid: string): Promise<any>;
     promoteParticipant(groupJid: string, participantJid: string): Promise<any>;
     demoteParticipant(groupJid: string, participantJid: string): Promise<any>;
+    deleteMessage(jid: string, key: any): Promise<any>;
     getSocket(): WhatsAppSocket | null;
     isReady(): boolean;
     getjid(): string | null;

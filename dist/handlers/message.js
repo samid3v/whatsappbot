@@ -9,6 +9,7 @@ const commands_1 = require("./commands");
 const link_detector_1 = require("./link-detector");
 const db_1 = require("../database/db");
 const config_1 = require("../utils/config");
+const helpers_1 = require("../utils/helpers");
 class MessageHandler {
     initialized = false;
     async initialize() {
@@ -48,10 +49,45 @@ class MessageHandler {
                 db_1.userOps.getOrCreate(senderJid, pushName);
                 // Get user role
                 const userRole = await role_manager_1.roleManager.getUserRole(senderJid);
-                // Check if user is muted
-                if (await mute_manager_1.muteManager.isMuted(senderJid)) {
-                    // Delete the message silently (can't do this with Baileys, just ignore)
-                    console.log(`🔇 Muted user ${senderJid} tried to send message`);
+                // Check if user is muted - must check AFTER user is in database
+                console.log(`[MessageHandler] Checking mute for: ${senderJid}`);
+                const mutedCheck = await mute_manager_1.muteManager.isMuted(senderJid);
+                console.log(`[MessageHandler] Mute check result for ${senderJid}: ${mutedCheck}`);
+                if (mutedCheck) {
+                    // User is muted - delete their message and handle spam
+                    console.log(`🔇 Muted user ${senderJid} tried to send message, deleting`);
+                    // Delete the muted user's message
+                    try {
+                        await client_1.waClient.deleteMessage(jid, data.msg.key);
+                    }
+                    catch (e) {
+                        console.log('Could not delete message:', e);
+                    }
+                    // Track muted message count for spam detection
+                    console.log(`[MuteSpam] About to increment count for ${senderJid}`);
+                    const messageCount = db_1.userOps.incrementMutedMessageCount(senderJid);
+                    console.log(`[MuteSpam] Count after increment: ${messageCount}`);
+                    const user = db_1.userOps.get(senderJid);
+                    console.log(`[MuteSpam] User ${senderJid} has sent ${messageCount} messages while muted, user.is_muted=${user?.is_muted}, user.muted_messages_count=${user?.muted_messages_count}`);
+                    // Handle spam: warn at 3 messages, kick at 5
+                    if (messageCount >= 5) {
+                        // Kick the user from group
+                        console.log(`[MuteSpam] Kicking user ${senderJid} for spam (${messageCount} messages)`);
+                        try {
+                            await client_1.waClient.removeParticipant(jid, senderJid);
+                            await client_1.waClient.sendMessage(jid, `🚫 *User Kicked*\n\n👤 User was removed from the group for repeatedly sending messages while muted.`);
+                        }
+                        catch (e) {
+                            console.log('Could not kick user:', e);
+                            await client_1.waClient.sendMessage(jid, `⚠️ ${user?.name || (0, helpers_1.formatJid)(senderJid)} has been muted ${messageCount} times and should be removed manually.`);
+                        }
+                    }
+                    else if (messageCount >= 3) {
+                        // Warn the user about being kicked
+                        const remaining = 5 - messageCount;
+                        console.log(`[MuteSpam] Warning user ${senderJid} - ${remaining} messages until kick`);
+                        await client_1.waClient.sendMessage(jid, `⚠️ *Mute Warning*\n\n👤 ${user?.name || (0, helpers_1.formatJid)(senderJid)}\n\nYou have sent ${messageCount} messages while muted.\n${remaining} more messages will result in removal from the group!\n\nPlease respect the mute.`);
+                    }
                     return;
                 }
                 // Check for link in message
@@ -62,7 +98,6 @@ class MessageHandler {
                 }
                 // Check if it's a command
                 const command = (0, commands_1.parseCommand)(text);
-                console.log(`🔍 Parsed command: ${JSON.stringify(command)}`);
                 if (!command)
                     return;
                 // Get command handler
@@ -154,6 +189,8 @@ class MessageHandler {
             isOwner,
             isModerator,
             senderJid,
+            quotedSenderJid: data.quotedSenderJid,
+            mentionedJids: data.mentionedJids,
         };
     }
     isReady() {

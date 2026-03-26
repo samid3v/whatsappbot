@@ -7,6 +7,7 @@ import { shouldWarnForLink } from './link-detector';
 import { userOps } from '../database/db';
 import { CommandContext } from '../types';
 import config, { isGroupAllowed } from '../utils/config';
+import { formatJid } from '../utils/helpers';
 
 interface MessageData {
     msg: any;
@@ -16,6 +17,7 @@ interface MessageData {
     text: string;
     isMentioned: boolean;
     mentionedJids: string[];
+    quotedSenderJid?: string;
 }
 
 export class MessageHandler {
@@ -68,10 +70,46 @@ export class MessageHandler {
                 // Get user role
                 const userRole = await roleManager.getUserRole(senderJid);
 
-                // Check if user is muted
-                if (await muteManager.isMuted(senderJid)) {
-                    // Delete the message silently (can't do this with Baileys, just ignore)
-                    console.log(`🔇 Muted user ${senderJid} tried to send message`);
+                // Check if user is muted - must check AFTER user is in database
+                console.log(`[MessageHandler] Checking mute for: ${senderJid}`);
+                const mutedCheck = await muteManager.isMuted(senderJid);
+                console.log(`[MessageHandler] Mute check result for ${senderJid}: ${mutedCheck}`);
+                if (mutedCheck) {
+                    // User is muted - delete their message and handle spam
+                    console.log(`🔇 Muted user ${senderJid} tried to send message, deleting`);
+
+                    // Delete the muted user's message
+                    try {
+                        await waClient.deleteMessage(jid, data.msg.key);
+                    } catch (e) {
+                        console.log('Could not delete message:', e);
+                    }
+
+                    // Track muted message count for spam detection
+                    console.log(`[MuteSpam] About to increment count for ${senderJid}`);
+                    const messageCount = userOps.incrementMutedMessageCount(senderJid);
+                    console.log(`[MuteSpam] Count after increment: ${messageCount}`);
+                    const user = userOps.get(senderJid);
+                    console.log(`[MuteSpam] User ${senderJid} has sent ${messageCount} messages while muted, user.is_muted=${user?.is_muted}, user.muted_messages_count=${user?.muted_messages_count}`);
+
+                    // Handle spam: warn at 3 messages, kick at 5
+                    if (messageCount >= 5) {
+                        // Kick the user from group
+                        console.log(`[MuteSpam] Kicking user ${senderJid} for spam (${messageCount} messages)`);
+                        try {
+                            await waClient.removeParticipant(jid, senderJid);
+                            await waClient.sendMessage(jid, `🚫 *User Kicked*\n\n👤 User was removed from the group for repeatedly sending messages while muted.`);
+                        } catch (e) {
+                            console.log('Could not kick user:', e);
+                            await waClient.sendMessage(jid, `⚠️ ${user?.name || formatJid(senderJid)} has been muted ${messageCount} times and should be removed manually.`);
+                        }
+                    } else if (messageCount >= 3) {
+                        // Warn the user about being kicked
+                        const remaining = 5 - messageCount;
+                        console.log(`[MuteSpam] Warning user ${senderJid} - ${remaining} messages until kick`);
+                        await waClient.sendMessage(jid, `⚠️ *Mute Warning*\n\n👤 ${user?.name || formatJid(senderJid)}\n\nYou have sent ${messageCount} messages while muted.\n${remaining} more messages will result in removal from the group!\n\nPlease respect the mute.`);
+                    }
+
                     return;
                 }
 
@@ -84,7 +122,6 @@ export class MessageHandler {
 
                 // Check if it's a command
                 const command = parseCommand(text);
-                console.log(`🔍 Parsed command: ${JSON.stringify(command)}`);
 
                 if (!command) return;
 
@@ -181,6 +218,8 @@ export class MessageHandler {
             isOwner,
             isModerator,
             senderJid,
+            quotedSenderJid: data.quotedSenderJid,
+            mentionedJids: data.mentionedJids,
         };
     }
 

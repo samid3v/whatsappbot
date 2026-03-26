@@ -106,6 +106,8 @@ export interface CommandContext {
     isOwner: boolean;
     isModerator: boolean;
     senderJid: string;
+    quotedSenderJid?: string;
+    mentionedJids?: string[];
 }
 export interface Command {
     name: string;

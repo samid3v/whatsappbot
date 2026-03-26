@@ -7,19 +7,43 @@ const helpers_1 = require("../utils/helpers");
 class MuteManager {
     muteTimers = new Map();
     async muteUser(jid, groupJid, durationMinutes, reason = 'Violation') {
+        // Get phone number for logging
+        const phoneNumber = jid.replace('@s.whatsapp.net', '').replace('@lid', '').replace('@g.us', '');
+        console.log(`[muteUser] Attempting to mute jid=${jid}, phone=${phoneNumber}, duration=${durationMinutes}m`);
+        // Ensure user exists in database first
+        const user = db_1.userOps.getOrCreate(jid);
+        console.log(`[muteUser] User after getOrCreate:`, user ? `id=${user.id}, jid=${user.jid}, is_muted=${user.is_muted}` : 'null');
         // Calculate expiry time
         const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
         // Mute user in database
         db_1.userOps.mute(jid, expiresAt);
+        // Verify the mute was set
+        const userAfterMute = db_1.userOps.get(jid);
+        console.log(`[muteUser] After mute: is_muted=${userAfterMute?.is_muted}, expires=${userAfterMute?.mute_expires_at}`);
         // Log the mute
         db_1.logOps.add('mute', groupJid, jid, `${reason} - ${durationMinutes} minutes`);
-        // Get user name for message
-        const userName = (0, helpers_1.formatJid)(jid);
-        let message = `🔇 *User Muted*\n\n`;
+        // Get user name - try to get from database, or from WhatsApp group metadata
+        let userName = user?.name || (0, helpers_1.formatJid)(jid);
+        // Try to get better name from WhatsApp group participants
+        try {
+            const metadata = await client_1.waClient.getGroupMetadata(groupJid);
+            const participant = metadata?.participants?.find((p) => p.id === jid);
+            if (participant?.name || participant?.notify) {
+                userName = participant.name || participant.notify;
+            }
+        }
+        catch (e) {
+            // Ignore errors getting group metadata
+        }
+        let message = `🔇 *User Muted*
+
+`;
         message += `👤 User: ${userName}\n`;
         message += `📌 Reason: ${reason}\n`;
-        message += `⏱️ Duration: ${Math.floor(durationMinutes / 60)} hours ${durationMinutes % 60} minutes\n`;
-        message += `🕐 Expires: ${(0, helpers_1.formatDate)(expiresAt)}`;
+        message += `⏱️ Duration: ${(0, helpers_1.formatDurationString)(durationMinutes)}\n`;
+        message += `🕐 Expires: ${(0, helpers_1.formatDate)(expiresAt)}\n\n`;
+        message += `⚠️ *Your messages will be deleted while muted!*\n`;
+        message += `🚫 Repeated messages may result in removal from group.`;
         // Send mute message to group
         await client_1.waClient.sendMessage(groupJid, message);
         // Set auto-unmute timer
@@ -42,10 +66,29 @@ class MuteManager {
         }
         // Unmute user in database
         db_1.userOps.unmute(jid);
+        // Clear muted spam data
+        db_1.userOps.clearMutedSpamData(jid);
         // Log the unmute
         db_1.logOps.add('unmute', groupJid, jid);
-        // Get user name for message
-        const userName = (0, helpers_1.formatJid)(jid);
+        // Get user name - try to get from database, or from WhatsApp group metadata
+        let userName = (0, helpers_1.formatJid)(jid);
+        // Try to get better name from WhatsApp group participants
+        try {
+            const user = db_1.userOps.get(jid);
+            if (user?.name) {
+                userName = user.name;
+            }
+            else {
+                const metadata = await client_1.waClient.getGroupMetadata(groupJid);
+                const participant = metadata?.participants?.find((p) => p.id === jid);
+                if (participant?.name || participant?.notify) {
+                    userName = participant.name || participant.notify;
+                }
+            }
+        }
+        catch (e) {
+            // Ignore errors getting group metadata
+        }
         let message = `🔊 *User Unmuted*\n\n`;
         message += `👤 User: ${userName}\n`;
         message += `✅ The user can now send messages again.`;
@@ -57,16 +100,29 @@ class MuteManager {
         };
     }
     async isMuted(jid) {
-        const user = db_1.userOps.get(jid);
-        if (!user?.is_muted)
-            return false;
-        // Check if mute has expired
-        if (user.mute_expires_at && new Date(user.mute_expires_at) <= new Date()) {
-            // Auto-unmute expired
-            db_1.userOps.unmute(jid);
+        try {
+            const user = db_1.userOps.get(jid);
+            console.log(`[isMuted] Checking mute for jid: ${jid}, user found: ${!!user}, is_muted: ${user?.is_muted}`);
+            if (!user) {
+                // User not found in database - they can't be muted
+                return false;
+            }
+            if (!user.is_muted) {
+                return false;
+            }
+            // Check if mute has expired
+            if (user.mute_expires_at && new Date(user.mute_expires_at) <= new Date()) {
+                // Auto-unmute expired
+                console.log(`[isMuted] Mute expired for ${jid}, auto-unmuting`);
+                db_1.userOps.unmute(jid);
+                return false;
+            }
+            return true;
+        }
+        catch (error) {
+            console.error(`[isMuted] Error checking mute status:`, error);
             return false;
         }
-        return true;
     }
     async checkExpiredMutes() {
         const expiredMutes = db_1.userOps.getExpiredMutes();

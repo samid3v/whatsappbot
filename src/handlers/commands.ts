@@ -1,7 +1,7 @@
 import { CommandContext, Command, UserRole } from '../types';
 import { roleManager } from '../services/role-manager';
 import config from '../utils/config';
-import { parseArgs, hasPermission } from '../utils/helpers';
+import { parseArgs, hasPermission, parseDuration, formatDurationString, extractUserJidFromMention } from '../utils/helpers';
 import { warnManager } from '../services/warn-manager';
 import { muteManager } from '../services/mute-manager';
 import { waClient } from '../client';
@@ -120,16 +120,32 @@ registerCommand({
 registerCommand({
     name: 'mute',
     aliases: ['m'],
-    description: 'Mute a user',
-    usage: '.mute @user [minutes]',
+    description: 'Mute a user (reply to their message or use @mention)',
+    usage: '.mute @user [duration] [reason]\n.mute [duration] [reason] (reply to user)',
     minArgs: 1,
     requiredRole: ['admin'],
     execute: async (args: string[], context: CommandContext) => {
-        const mention = args[0];
-        const userJid = mention.replace('@', '') + '@s.whatsapp.net';
-        const duration = parseInt(args[1], 10) || 60;
+        let userJid: string | null = null;
+
+        // First check if args contain @mention (e.g., @254103608133 or @Mido)
+        const extractedJid = extractUserJidFromMention(args, context.mentionedJids || []);
+        if (extractedJid) {
+            userJid = extractedJid;
+        }
+        // Then check if user replied to a message
+        else if (context.quotedSenderJid) {
+            userJid = context.quotedSenderJid;
+        }
+
+        if (!userJid) {
+            await waClient.sendMessage(context.jid, `❌ Please mention a user to mute or reply to their message!\nUsage: .mute @user [duration] [reason]`);
+            return;
+        }
+
+        const durationStr = args[1] || '60m';
+        const durationMinutes = parseDuration(durationStr);
         const reason = args.slice(2).join(' ') || 'Violation';
-        await muteManager.muteUser(userJid, context.jid, duration, reason);
+        await muteManager.muteUser(userJid, context.jid, durationMinutes, reason);
     },
 });
 
@@ -137,13 +153,28 @@ registerCommand({
 registerCommand({
     name: 'unmute',
     aliases: ['um'],
-    description: 'Unmute a user',
-    usage: '.unmute @user',
+    description: 'Unmute a user (reply to their message or use @mention)',
+    usage: '.unmute @user\n.unmute (reply to user)',
     minArgs: 1,
     requiredRole: ['admin'],
     execute: async (args: string[], context: CommandContext) => {
-        const mention = args[0];
-        const userJid = mention.replace('@', '') + '@s.whatsapp.net';
+        let userJid: string | null = null;
+
+        // First check if args contain @mention
+        const extractedJid = extractUserJidFromMention(args, context.mentionedJids || []);
+        if (extractedJid) {
+            userJid = extractedJid;
+        }
+        // Then check if user replied to a message
+        else if (context.quotedSenderJid) {
+            userJid = context.quotedSenderJid;
+        }
+
+        if (!userJid) {
+            await waClient.sendMessage(context.jid, `❌ Please mention a user to unmute or reply to their message!\nUsage: .unmute @user`);
+            return;
+        }
+
         await muteManager.unmuteUser(userJid, context.jid);
     },
 });
