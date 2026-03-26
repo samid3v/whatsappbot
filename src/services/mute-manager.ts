@@ -83,8 +83,25 @@ export class MuteManager {
             this.muteTimers.delete(jid);
         }
 
-        // Unmute user in database
-        userOps.unmute(jid);
+        // Check if user is still in the group before trying to unmute
+        // If they're not in the group, don't send the unmute message
+        try {
+            const metadata = await waClient.getGroupMetadata(groupJid);
+            const participant = metadata?.participants?.find((p: any) => p.id === jid);
+            if (!participant) {
+                console.log(`[unmuteUser] User ${jid} is no longer in group ${groupJid}, skipping unmute message`);
+                // Still update the database but don't send message
+                userOps.unmute(jid);
+                userOps.clearMutedSpamData(jid);
+                logOps.add('unmute', groupJid, jid, 'User was kicked - auto unmute');
+                return {
+                    success: true,
+                    message: 'User was kicked - no message sent',
+                };
+            }
+        } catch (e) {
+            console.log('[unmuteUser] Could not check group participants:', e);
+        }
 
         // Clear muted spam data
         userOps.clearMutedSpamData(jid);

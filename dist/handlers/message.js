@@ -71,15 +71,20 @@ class MessageHandler {
                     console.log(`[MuteSpam] User ${senderJid} has sent ${messageCount} messages while muted, user.is_muted=${user?.is_muted}, user.muted_messages_count=${user?.muted_messages_count}`);
                     // Handle spam: warn at 3 messages, kick at 5
                     if (messageCount >= 5) {
+                        // Get user name for the message
+                        const userName = user?.name || (0, helpers_1.formatJid)(senderJid);
                         // Kick the user from group
                         console.log(`[MuteSpam] Kicking user ${senderJid} for spam (${messageCount} messages)`);
                         try {
                             await client_1.waClient.removeParticipant(jid, senderJid);
-                            await client_1.waClient.sendMessage(jid, `🚫 *User Kicked*\n\n👤 User was removed from the group for repeatedly sending messages while muted.`);
+                            // Clear mute data since user is kicked
+                            db_1.userOps.unmute(senderJid);
+                            db_1.userOps.clearMutedSpamData(senderJid);
+                            await client_1.waClient.sendMessage(jid, `🚫 *User Kicked*\n\n👤 User: ${userName}\n\n⚠️ Removed from group for sending ${messageCount} messages while muted.`);
                         }
                         catch (e) {
                             console.log('Could not kick user:', e);
-                            await client_1.waClient.sendMessage(jid, `⚠️ ${user?.name || (0, helpers_1.formatJid)(senderJid)} has been muted ${messageCount} times and should be removed manually.`);
+                            await client_1.waClient.sendMessage(jid, `⚠️ ${userName} has been muted ${messageCount} times and should be removed manually.`);
                         }
                     }
                     else if (messageCount >= 3) {
