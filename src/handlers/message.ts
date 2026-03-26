@@ -121,8 +121,41 @@ export class MessageHandler {
 
                 // Check for link in message
                 if (text && shouldWarnForLink(text, userRole)) {
-                    await warnManager.warnUser(senderJid, jid, 'Link detected');
-                    // Note: Can't delete message with Baileys, but we warned them
+                    console.log(`[LinkSpam] Link detected from ${senderJid}`);
+
+                    // Delete the message with link
+                    try {
+                        await waClient.deleteMessage(jid, data.msg.key);
+                    } catch (e) {
+                        console.log('Could not delete link message:', e);
+                    }
+
+                    // Track link violations
+                    const linkCount = userOps.incrementLinkCount(senderJid);
+                    const user = userOps.get(senderJid);
+                    const userName = user?.name || formatJid(senderJid);
+
+                    // Link spam: 1-2 = warn, 3-4 = mute, 5+ = kick
+                    if (linkCount >= 5) {
+                        // Kick for link spam
+                        console.log(`[LinkSpam] Kicking ${senderJid} for link spam (${linkCount} links)`);
+                        try {
+                            await waClient.removeParticipant(jid, senderJid);
+                            userOps.clearLinkSpamData(senderJid);
+                            await waClient.sendMention(jid, `🚫 *User Kicked for Link Spam*\n\n@${formatJid(senderJid)}\n\n⚠️ Removed for posting ${linkCount} links.`, [senderJid]);
+                        } catch (e) {
+                            console.log('Could not kick user:', e);
+                        }
+                    } else if (linkCount >= 3) {
+                        // Mute for repeated links
+                        console.log(`[LinkSpam] Muting ${senderJid} for link spam (${linkCount} links)`);
+                        await muteManager.muteUser(senderJid, jid, 60, 'Link spam');
+                        userOps.clearLinkSpamData(senderJid);
+                    } else if (linkCount >= 1) {
+                        // Warn for first links
+                        console.log(`[LinkSpam] Warning ${senderJid} for link (${linkCount}/5)`);
+                        await waClient.sendMention(jid, `⚠️ *Link Warning*\n\n@${formatJid(senderJid)}\n\nLinks are not allowed in this group!\n\nLink count: ${linkCount}/5\n\n3+ links = mute\n5+ links = kick`, [senderJid]);
+                    }
                     return;
                 }
 

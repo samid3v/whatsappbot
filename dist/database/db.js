@@ -146,6 +146,8 @@ exports.userOps = {
                 mute_expires_at: null,
                 muted_messages_count: 0,
                 muted_spam_warning: false,
+                link_spam_count: 0,
+                link_warn_issued: false,
                 created_at: new Date().toISOString()
             };
             db.users.push(user);
@@ -253,6 +255,33 @@ exports.userOps = {
             user.muted_messages_count = 0;
             user.muted_spam_warning = false;
             saveDatabase(db);
+        }
+    },
+    // Increment link spam count
+    incrementLinkCount: (jid) => {
+        const user = findUserByJid(jid);
+        if (!user)
+            return 0;
+        if (user.link_spam_count === undefined) {
+            user.link_spam_count = 0;
+        }
+        user.link_spam_count = (user.link_spam_count || 0) + 1;
+        scheduleSave();
+        console.log(`[LinkSpam] jid=${jid}, link_count=${user.link_spam_count}`);
+        return user.link_spam_count;
+    },
+    // Get link spam count
+    getLinkCount: (jid) => {
+        const user = findUserByJid(jid);
+        return user?.link_spam_count || 0;
+    },
+    // Clear link spam count (when warned or muted)
+    clearLinkSpamData: (jid) => {
+        const user = findUserByJid(jid);
+        if (user) {
+            user.link_spam_count = 0;
+            user.link_warn_issued = false;
+            scheduleSave();
         }
     }
 };

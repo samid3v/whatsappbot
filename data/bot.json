@@ -106,11 +106,13 @@
       "name": "Mido 🎮",
       "role": "member",
       "warnings": 0,
-      "is_muted": 0,
-      "mute_expires_at": null,
+      "is_muted": 1,
+      "mute_expires_at": "2026-03-26T11:39:48.342Z",
       "created_at": "2026-03-25T14:02:27.753Z",
-      "muted_messages_count": 0,
-      "muted_spam_warning": false
+      "muted_messages_count": 3,
+      "muted_spam_warning": false,
+      "link_spam_count": 0,
+      "link_warn_issued": false
     },
     {
       "id": 12,
@@ -383,6 +385,14 @@
       "target_jid": "49671498121447@s.whatsapp.net",
       "details": "User was kicked - auto unmute",
       "created_at": "2026-03-26T09:33:31.445Z"
+    },
+    {
+      "id": 29,
+      "action": "mute",
+      "user_jid": "120363409866358526@g.us",
+      "target_jid": "49671498121447@lid",
+      "details": "Link spam - 60 minutes",
+      "created_at": "2026-03-26T10:39:48.347Z"
     }
   ]
 }

@@ -14,6 +14,9 @@ export declare const userOps: {
     setMutedSpamWarning: (jid: string, warned: boolean) => void;
     hasMutedSpamWarning: (jid: string) => boolean;
     clearMutedSpamData: (jid: string) => void;
+    incrementLinkCount: (jid: string) => number;
+    getLinkCount: (jid: string) => number;
+    clearLinkSpamData: (jid: string) => void;
 };
 export declare const statsOps: {
     getOrCreate: (userJid: string) => any;
