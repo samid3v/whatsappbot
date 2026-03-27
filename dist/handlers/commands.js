@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -705,6 +738,140 @@ registerCommand({
         await stats_manager_1.statsManager.sendProfile(context.jid, targetJid);
     },
 });
+// ==================== PVP COMMANDS ====================
+// PVP Scores - record match result (requires screenshot proof)
+registerCommand({
+    name: 'pvpscores',
+    aliases: ['pvp', 'pvpresult', 'pvpscore'],
+    description: 'Record PVP match score (attach screenshot proof)',
+    usage: '.pvpscores @user1 vs @user2 3:1 (with screenshot)',
+    minArgs: 3,
+    execute: async (args, context) => {
+        // Require image proof
+        if (!context.hasImage) {
+            await client_1.waClient.sendMessage(context.jid, `📸 *Proof Required!*\n\n` +
+                `Attach a screenshot of the match result!\n\n` +
+                `*How to submit:*\n` +
+                `1. Take a screenshot of your eFootball match result\n` +
+                `2. Attach the image and add caption:\n` +
+                `   .pvpscores @user1 vs @user2 3:1\n\n` +
+                `⚠️ No screenshot = No record!`);
+            return;
+        }
+        // Parse format: @user1 vs @user2 3:1 or @user1 vs @user2 3-1
+        const vsIndex = args.findIndex(arg => arg.toLowerCase() === 'vs');
+        if (vsIndex === -1 || vsIndex < 1 || vsIndex >= args.length - 1) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Invalid format. Use: .pvpscores @user1 vs @user2 3:1\n` +
+                `Example: .pvpscores @player1 vs @player2 3-1`);
+            return;
+        }
+        const mentionedJids = context.mentionedJids || [];
+        if (mentionedJids.length < 2) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Please mention two players!\n` +
+                `Usage: .pvpscores @user1 vs @user2 3:1`);
+            return;
+        }
+        const player1Jid = mentionedJids[0];
+        const player2Jid = mentionedJids[1];
+        // Get the score argument (last argument)
+        const scoreArg = args[args.length - 1];
+        // Parse score - support both : and -
+        const scoreMatch = scoreArg.match(/(\d+)[:\-](\d+)/);
+        if (!scoreMatch) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Invalid score format. Use: 3:1 or 3-1`);
+            return;
+        }
+        const player1Score = parseInt(scoreMatch[1], 10);
+        const player2Score = parseInt(scoreMatch[2], 10);
+        // Record the match as pending
+        const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
+        const result = await pvpManager.recordMatch(player1Jid, player2Jid, player1Score, player2Score, context.jid);
+        await client_1.waClient.sendMessage(context.jid, result);
+    },
+});
+// PVP Approve - admin approves a pending match
+registerCommand({
+    name: 'pvpapprove',
+    aliases: ['pvpok', 'pvpyes'],
+    description: 'Approve a pending PVP match',
+    usage: '.pvpapprove <match_id>',
+    minArgs: 1,
+    requiredRole: ['admin'],
+    execute: async (args, context) => {
+        const matchId = parseInt(args[0], 10);
+        if (isNaN(matchId)) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Invalid match ID. Usage: .pvpapprove <match_id>`);
+            return;
+        }
+        const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
+        const result = await pvpManager.approveMatch(matchId, context.senderJid);
+        await client_1.waClient.sendMessage(context.jid, result);
+        // Show updated leaderboard after approval
+        await pvpManager.sendLeaderboard(context.jid, 10);
+    },
+});
+// PVP Reject - admin rejects a pending match
+registerCommand({
+    name: 'pvpreject',
+    aliases: ['pvpno', 'pvpdeny'],
+    description: 'Reject a pending PVP match',
+    usage: '.pvpreject <match_id> <reason>',
+    minArgs: 2,
+    requiredRole: ['admin'],
+    execute: async (args, context) => {
+        const matchId = parseInt(args[0], 10);
+        if (isNaN(matchId)) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Invalid match ID. Usage: .pvpreject <match_id> <reason>`);
+            return;
+        }
+        const reason = args.slice(1).join(' ') || 'No reason provided';
+        const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
+        const result = await pvpManager.rejectMatch(matchId, context.senderJid, reason);
+        await client_1.waClient.sendMessage(context.jid, result);
+    },
+});
+// PVP Pending - list all pending matches
+registerCommand({
+    name: 'pvppending',
+    aliases: ['pvpqueue', 'pvpq'],
+    description: 'View pending PVP matches',
+    usage: '.pvppending',
+    requiredRole: ['admin'],
+    execute: async (args, context) => {
+        const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
+        await pvpManager.sendPendingMatches(context.jid);
+    },
+});
+// PVP Leaderboard
+registerCommand({
+    name: 'pvplb',
+    aliases: ['pvlb', 'pvpLB', 'pvprank', 'pvpranking'],
+    description: 'View PVP leaderboard',
+    usage: '.pvplb [count]',
+    execute: async (args, context) => {
+        const limit = parseInt(args[0], 10) || 10;
+        const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
+        await pvpManager.sendLeaderboard(context.jid, limit);
+    },
+});
+// PVP Stats/Profile
+registerCommand({
+    name: 'pvpstats',
+    aliases: ['pvpp', 'pvprofile', 'pvps'],
+    description: 'View player PVP stats',
+    usage: '.pvpstats [@user]',
+    execute: async (args, context) => {
+        let targetJid = context.senderJid;
+        if (args[0]) {
+            // Check if it's a mention
+            if (args[0].startsWith('@')) {
+                targetJid = args[0].replace('@', '') + '@s.whatsapp.net';
+            }
+        }
+        const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
+        await pvpManager.sendProfile(context.jid, targetJid);
+    },
+});
 // ==================== GENERAL COMMANDS ====================
 // Help
 registerCommand({
@@ -730,6 +897,9 @@ registerCommand({
         msg += `.tcr, .tj, .tl, .ts, .tb, .tres\n\n`;
         msg += `*Stats:*\n`;
         msg += `.lb, .profile\n\n`;
+        msg += `*PVP:*\n`;
+        msg += `.pvpscores, .pvplb, .pvpstats\n`;
+        msg += `.pvpapprove, .pvpreject, .pvppending\n\n`;
         msg += `.help [cmd] for details`;
         await client_1.waClient.sendMessage(context.jid, msg);
     },

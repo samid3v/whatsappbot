@@ -50,4 +50,21 @@ export declare const settingsOps: {
     get: (key: string) => string | null;
     set: (key: string, value: string) => void;
 };
+export declare const pvpOps: {
+    recordMatch: (player1Jid: string, player2Jid: string, player1Score: number, player2Score: number) => any;
+    getMatchHistory: (userJid: string, limit?: number) => any[];
+    getAllMatches: () => any[];
+    getPendingMatches: () => any[];
+    getById: (matchId: number) => any;
+    approve: (matchId: number, adminJid: string) => void;
+    reject: (matchId: number, adminJid: string, reason: string) => void;
+    findPending: (player1Jid: string, player2Jid: string, player1Score: number, player2Score: number) => any;
+};
+export declare const pvpStatsOps: {
+    getOrCreate: (userJid: string) => any;
+    updateAfterMatch: (userJid: string, goalsFor: number, goalsAgainst: number, result: "win" | "draw" | "loss", points: number) => void;
+    getLeaderboard: (limit?: number) => any[];
+    get: (userJid: string) => any | null;
+    applyMatchStats: (player1Jid: string, player2Jid: string, player1Score: number, player2Score: number) => void;
+};
 //# sourceMappingURL=db.d.ts.map

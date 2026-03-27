@@ -229,6 +229,7 @@ class MessageHandler {
             senderJid,
             quotedSenderJid: data.quotedSenderJid,
             mentionedJids: data.mentionedJids,
+            hasImage: data.hasImage,
         };
     }
     isReady() {

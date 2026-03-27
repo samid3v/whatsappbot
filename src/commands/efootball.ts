@@ -5,6 +5,7 @@ import tournamentOps from '../services/tournament-manager';
 import { userOps } from '../database/db';
 import { formatJid } from '../utils/helpers';
 import config from '../utils/config';
+import { pvpManager } from '../services/pvp-manager';
 
 // ==================== STATS COMMANDS ====================
 
@@ -252,7 +253,109 @@ export const tournamentCommands = {
     },
 };
 
+// ==================== PVP COMMANDS ====================
+
+export const pvpCommands = {
+    // Record match score
+    pvpscores: {
+        name: 'pvpscores',
+        aliases: ['pvp'],
+        description: 'Record PVP match score',
+        usage: '.pvpscores @user1 vs @user2 3:1',
+        minArgs: 3,
+        execute: async (args: string[], context: CommandContext) => {
+            // Parse format: @user1 vs @user2 3:1 or @user1 vs @user2 3-1
+            // Or: @user2 vs @user1 1:3
+
+            // Find the vs separator
+            const vsIndex = args.findIndex(arg => arg.toLowerCase() === 'vs');
+
+            if (vsIndex === -1 || vsIndex < 1 || vsIndex >= args.length - 1) {
+                await waClient.sendMessage(context.jid,
+                    `❌ Invalid format. Use: .pvpscores @user1 vs @user2 3:1\n` +
+                    `Example: .pvpscores @player1 vs @player2 3-1`
+                );
+                return;
+            }
+
+            // Get player mentions from context
+            const mentionedJids = context.mentionedJids || [];
+
+            if (mentionedJids.length < 2) {
+                await waClient.sendMessage(context.jid,
+                    `❌ Please mention two players!\n` +
+                    `Usage: .pvpscores @user1 vs @user2 3:1`
+                );
+                return;
+            }
+
+            const player1Jid = mentionedJids[0];
+            const player2Jid = mentionedJids[1];
+
+            // Get the score argument (last argument)
+            const scoreArg = args[args.length - 1];
+
+            // Parse score - support both : and -
+            const scoreMatch = scoreArg.match(/(\d+)[:\-](\d+)/);
+
+            if (!scoreMatch) {
+                await waClient.sendMessage(context.jid,
+                    `❌ Invalid score format. Use: 3:1 or 3-1`
+                );
+                return;
+            }
+
+            const player1Score = parseInt(scoreMatch[1], 10);
+            const player2Score = parseInt(scoreMatch[2], 10);
+
+            // Record the match
+            const result = await pvpManager.recordMatch(
+                player1Jid,
+                player2Jid,
+                player1Score,
+                player2Score,
+                context.jid
+            );
+
+            await waClient.sendMessage(context.jid, result);
+        },
+    },
+
+    // Leaderboard
+    pvplb: {
+        name: 'pvplb',
+        aliases: ['pvlb', 'pvpLB'],
+        description: 'View PVP leaderboard',
+        usage: '.pvplb [count]',
+        execute: async (args: string[], context: CommandContext) => {
+            const limit = parseInt(args[0], 10) || 10;
+            await pvpManager.sendLeaderboard(context.jid, limit);
+        },
+    },
+
+    // Player stats/profile
+    pvpstats: {
+        name: 'pvpstats',
+        aliases: ['pvpp', 'pvprofile'],
+        description: 'View player PVP stats',
+        usage: '.pvpstats [@user]',
+        execute: async (args: string[], context: CommandContext) => {
+            let targetJid = context.senderJid;
+
+            if (args[0]) {
+                // Check if it's a mention
+                if (args[0].startsWith('@')) {
+                    targetJid = args[0].replace('@', '') + '@s.whatsapp.net';
+                }
+            }
+
+            await pvpManager.sendProfile(context.jid, targetJid);
+        },
+    },
+};
+
 export default {
     statsCommands,
     tournamentCommands,
+    pvpCommands,
 };

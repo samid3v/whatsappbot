@@ -62,6 +62,30 @@ export declare const tournamentCommands: {
         execute: (args: string[], context: CommandContext) => Promise<void>;
     };
 };
+export declare const pvpCommands: {
+    pvpscores: {
+        name: string;
+        aliases: string[];
+        description: string;
+        usage: string;
+        minArgs: number;
+        execute: (args: string[], context: CommandContext) => Promise<void>;
+    };
+    pvplb: {
+        name: string;
+        aliases: string[];
+        description: string;
+        usage: string;
+        execute: (args: string[], context: CommandContext) => Promise<void>;
+    };
+    pvpstats: {
+        name: string;
+        aliases: string[];
+        description: string;
+        usage: string;
+        execute: (args: string[], context: CommandContext) => Promise<void>;
+    };
+};
 declare const _default: {
     statsCommands: {
         leaderboard: {
@@ -123,6 +147,30 @@ declare const _default: {
             description: string;
             usage: string;
             minArgs: number;
+            execute: (args: string[], context: CommandContext) => Promise<void>;
+        };
+    };
+    pvpCommands: {
+        pvpscores: {
+            name: string;
+            aliases: string[];
+            description: string;
+            usage: string;
+            minArgs: number;
+            execute: (args: string[], context: CommandContext) => Promise<void>;
+        };
+        pvplb: {
+            name: string;
+            aliases: string[];
+            description: string;
+            usage: string;
+            execute: (args: string[], context: CommandContext) => Promise<void>;
+        };
+        pvpstats: {
+            name: string;
+            aliases: string[];
+            description: string;
+            usage: string;
             execute: (args: string[], context: CommandContext) => Promise<void>;
         };
     };

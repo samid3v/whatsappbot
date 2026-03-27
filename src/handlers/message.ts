@@ -18,6 +18,7 @@ interface MessageData {
     isMentioned: boolean;
     mentionedJids: string[];
     quotedSenderJid?: string;
+    hasImage: boolean;
 }
 
 export class MessageHandler {
@@ -259,6 +260,7 @@ export class MessageHandler {
             senderJid,
             quotedSenderJid: data.quotedSenderJid,
             mentionedJids: data.mentionedJids,
+            hasImage: data.hasImage,
         };
     }
 

@@ -10,6 +10,7 @@ export declare class WhatsAppClient extends EventEmitter {
     connect(): Promise<void>;
     private getMessageText;
     private isMentioned;
+    private messageHasImage;
     sendMessage(jid: string, text: string): Promise<any>;
     sendReply(jid: string, messageId: string, text: string): Promise<any>;
     reply(messageId: string, jid: string, text: string): Promise<any>;

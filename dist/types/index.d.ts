@@ -108,6 +108,7 @@ export interface CommandContext {
     senderJid: string;
     quotedSenderJid?: string;
     mentionedJids?: string[];
+    hasImage: boolean;
 }
 export interface Command {
     name: string;

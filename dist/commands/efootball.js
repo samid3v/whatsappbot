@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.tournamentCommands = exports.statsCommands = void 0;
+exports.pvpCommands = exports.tournamentCommands = exports.statsCommands = void 0;
 const client_1 = require("../client");
 const stats_manager_1 = require("../services/stats-manager");
 const tournament_manager_1 = __importDefault(require("../services/tournament-manager"));
 const helpers_1 = require("../utils/helpers");
 const config_1 = __importDefault(require("../utils/config"));
+const pvp_manager_1 = require("../services/pvp-manager");
 // ==================== STATS COMMANDS ====================
 exports.statsCommands = {
     // Leaderboard command
@@ -206,8 +207,81 @@ exports.tournamentCommands = {
         },
     },
 };
+// ==================== PVP COMMANDS ====================
+exports.pvpCommands = {
+    // Record match score
+    pvpscores: {
+        name: 'pvpscores',
+        aliases: ['pvp'],
+        description: 'Record PVP match score',
+        usage: '.pvpscores @user1 vs @user2 3:1',
+        minArgs: 3,
+        execute: async (args, context) => {
+            // Parse format: @user1 vs @user2 3:1 or @user1 vs @user2 3-1
+            // Or: @user2 vs @user1 1:3
+            // Find the vs separator
+            const vsIndex = args.findIndex(arg => arg.toLowerCase() === 'vs');
+            if (vsIndex === -1 || vsIndex < 1 || vsIndex >= args.length - 1) {
+                await client_1.waClient.sendMessage(context.jid, `❌ Invalid format. Use: .pvpscores @user1 vs @user2 3:1\n` +
+                    `Example: .pvpscores @player1 vs @player2 3-1`);
+                return;
+            }
+            // Get player mentions from context
+            const mentionedJids = context.mentionedJids || [];
+            if (mentionedJids.length < 2) {
+                await client_1.waClient.sendMessage(context.jid, `❌ Please mention two players!\n` +
+                    `Usage: .pvpscores @user1 vs @user2 3:1`);
+                return;
+            }
+            const player1Jid = mentionedJids[0];
+            const player2Jid = mentionedJids[1];
+            // Get the score argument (last argument)
+            const scoreArg = args[args.length - 1];
+            // Parse score - support both : and -
+            const scoreMatch = scoreArg.match(/(\d+)[:\-](\d+)/);
+            if (!scoreMatch) {
+                await client_1.waClient.sendMessage(context.jid, `❌ Invalid score format. Use: 3:1 or 3-1`);
+                return;
+            }
+            const player1Score = parseInt(scoreMatch[1], 10);
+            const player2Score = parseInt(scoreMatch[2], 10);
+            // Record the match
+            const result = await pvp_manager_1.pvpManager.recordMatch(player1Jid, player2Jid, player1Score, player2Score, context.jid);
+            await client_1.waClient.sendMessage(context.jid, result);
+        },
+    },
+    // Leaderboard
+    pvplb: {
+        name: 'pvplb',
+        aliases: ['pvlb', 'pvpLB'],
+        description: 'View PVP leaderboard',
+        usage: '.pvplb [count]',
+        execute: async (args, context) => {
+            const limit = parseInt(args[0], 10) || 10;
+            await pvp_manager_1.pvpManager.sendLeaderboard(context.jid, limit);
+        },
+    },
+    // Player stats/profile
+    pvpstats: {
+        name: 'pvpstats',
+        aliases: ['pvpp', 'pvprofile'],
+        description: 'View player PVP stats',
+        usage: '.pvpstats [@user]',
+        execute: async (args, context) => {
+            let targetJid = context.senderJid;
+            if (args[0]) {
+                // Check if it's a mention
+                if (args[0].startsWith('@')) {
+                    targetJid = args[0].replace('@', '') + '@s.whatsapp.net';
+                }
+            }
+            await pvp_manager_1.pvpManager.sendProfile(context.jid, targetJid);
+        },
+    },
+};
 exports.default = {
     statsCommands: exports.statsCommands,
     tournamentCommands: exports.tournamentCommands,
+    pvpCommands: exports.pvpCommands,
 };
 //# sourceMappingURL=efootball.js.map

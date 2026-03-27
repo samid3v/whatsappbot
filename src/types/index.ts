@@ -141,6 +141,7 @@ export interface CommandContext {
     senderJid: string;
     quotedSenderJid?: string;
     mentionedJids?: string[];
+    hasImage: boolean;
 }
 
 // Command definition

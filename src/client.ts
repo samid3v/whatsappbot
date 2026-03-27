@@ -171,6 +171,7 @@ export class WhatsAppClient extends EventEmitter {
             isMentioned: this.isMentioned(msg),
             mentionedJids: contextInfo?.mentionedJid || [],
             quotedSenderJid,
+            hasImage: this.messageHasImage(msg),
           });
 
           console.log('✅ Message emitted successfully');
@@ -267,6 +268,14 @@ export class WhatsAppClient extends EventEmitter {
 
   private isMentioned(msg: any): boolean {
     return !!(msg.message as any)?.contextInfo?.mentionedJid?.length;
+  }
+
+  private messageHasImage(msg: any): boolean {
+    const message = msg.message;
+    if (!message) return false;
+    if (message.imageMessage) return true;
+    if (message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage) return true;
+    return false;
   }
 
   async sendMessage(jid: string, text: string): Promise<any> {
