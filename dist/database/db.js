@@ -153,6 +153,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pvp_matches_p1 ON pvp_matches(player1_jid);
   CREATE INDEX IF NOT EXISTS idx_pvp_matches_p2 ON pvp_matches(player2_jid);
   CREATE INDEX IF NOT EXISTS idx_pvp_matches_status ON pvp_matches(status);
+
+  CREATE TABLE IF NOT EXISTS pvp_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_jid TEXT NOT NULL UNIQUE,
+    points INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    draws INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    goals_for INTEGER NOT NULL DEFAULT 0,
+    goals_against INTEGER NOT NULL DEFAULT 0,
+    matches_played INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 // Migrate existing pvp_matches tables (add columns if missing)
 try {

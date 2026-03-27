@@ -744,7 +744,7 @@ registerCommand({
     name: 'pvpscores',
     aliases: ['pvp', 'pvpresult', 'pvpscore'],
     description: 'Record PVP match score (attach screenshot proof)',
-    usage: '.pvpscores @user1 vs @user2 3:1 (with screenshot)',
+    usage: '.pvpscores @user1 vs @user2 3:1 (with screenshot)\n.me vs @opponent 3:1\n.25412345678 vs 25487654321 2:0',
     minArgs: 3,
     execute: async (args, context) => {
         // Require image proof
@@ -753,29 +753,31 @@ registerCommand({
                 `Attach a screenshot of the match result!\n\n` +
                 `*How to submit:*\n` +
                 `1. Take a screenshot of your eFootball match result\n` +
-                `2. Attach the image and add caption:\n` +
-                `   .pvpscores @user1 vs @user2 3:1\n\n` +
+                `2. Attach the image and add caption:\n\n` +
+                `   .pvpscores @user1 vs @user2 3:1\n` +
+                `   .me vs @opponent 3:1\n` +
+                `   .25412345678 vs 25487654321 2:0\n\n` +
                 `⚠️ No screenshot = No record!`);
             return;
         }
-        // Parse format: @user1 vs @user2 3:1 or @user1 vs @user2 3-1
+        // Parse format: player1 vs player2 score
+        // Supported formats:
+        //   .pvpscores @user1 vs @user2 3:1
+        //   .pvpscores me vs @user 3:1
+        //   .pvpscores me vs 25412345678 3:1
+        //   .pvpscores 25412345678 vs 25487654321 2:0
         const vsIndex = args.findIndex(arg => arg.toLowerCase() === 'vs');
         if (vsIndex === -1 || vsIndex < 1 || vsIndex >= args.length - 1) {
-            await client_1.waClient.sendMessage(context.jid, `❌ Invalid format. Use: .pvpscores @user1 vs @user2 3:1\n` +
-                `Example: .pvpscores @player1 vs @player2 3-1`);
+            await client_1.waClient.sendMessage(context.jid, `❌ Invalid format!\n\n` +
+                `*Examples:*\n` +
+                `.pvpscores @user1 vs @user2 3:1\n` +
+                `.me vs @opponent 3:1\n` +
+                `.me vs 25412345678 2:0\n` +
+                `.25412345678 vs 25487654321 1:1`);
             return;
         }
-        const mentionedJids = context.mentionedJids || [];
-        if (mentionedJids.length < 2) {
-            await client_1.waClient.sendMessage(context.jid, `❌ Please mention two players!\n` +
-                `Usage: .pvpscores @user1 vs @user2 3:1`);
-            return;
-        }
-        const player1Jid = mentionedJids[0];
-        const player2Jid = mentionedJids[1];
-        // Get the score argument (last argument)
+        // Parse score (last arg) - support both : and -
         const scoreArg = args[args.length - 1];
-        // Parse score - support both : and -
         const scoreMatch = scoreArg.match(/(\d+)[:\-](\d+)/);
         if (!scoreMatch) {
             await client_1.waClient.sendMessage(context.jid, `❌ Invalid score format. Use: 3:1 or 3-1`);
@@ -783,6 +785,51 @@ registerCommand({
         }
         const player1Score = parseInt(scoreMatch[1], 10);
         const player2Score = parseInt(scoreMatch[2], 10);
+        // Resolve player identifiers to JIDs
+        const leftSide = args.slice(0, vsIndex);
+        const rightSide = args.slice(vsIndex + 1, args.length - 1);
+        const mentionedJids = context.mentionedJids || [];
+        let mentionIndex = 0;
+        function resolvePlayer(tokens) {
+            for (const token of tokens) {
+                const lower = token.toLowerCase();
+                // "me" or "m" = sender themselves
+                if (lower === 'me' || lower === 'm') {
+                    return context.senderJid;
+                }
+                // @mention from WhatsApp
+                if (token.startsWith('@')) {
+                    if (mentionIndex < mentionedJids.length) {
+                        return mentionedJids[mentionIndex++];
+                    }
+                    // If no mention JID available, try extracting phone from @tag
+                    const phone = token.replace('@', '');
+                    if (/^\d{7,15}$/.test(phone)) {
+                        return phone + '@s.whatsapp.net';
+                    }
+                }
+                // Raw phone number (7-15 digits)
+                const cleanPhone = token.replace(/[^0-9]/g, '');
+                if (/^\d{7,15}$/.test(cleanPhone)) {
+                    return cleanPhone + '@s.whatsapp.net';
+                }
+            }
+            return null;
+        }
+        const player1Jid = resolvePlayer(leftSide);
+        const player2Jid = resolvePlayer(rightSide);
+        if (!player1Jid || !player2Jid) {
+            await client_1.waClient.sendMessage(context.jid, `❌ Could not identify both players!\n\n` +
+                `*Options:*\n` +
+                `• @mention players: @user1 vs @user2\n` +
+                `• Use "me" for yourself: me vs @user\n` +
+                `• Use phone numbers: 25412345678 vs 25487654321`);
+            return;
+        }
+        if (player1Jid === player2Jid) {
+            await client_1.waClient.sendMessage(context.jid, `❌ You can't play against yourself!`);
+            return;
+        }
         // Record the match as pending
         const { pvpManager } = await Promise.resolve().then(() => __importStar(require('../services/pvp-manager')));
         const result = await pvpManager.recordMatch(player1Jid, player2Jid, player1Score, player2Score, context.jid);
