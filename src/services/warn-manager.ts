@@ -3,6 +3,7 @@ import { waClient } from '../client';
 import config from '../utils/config';
 import { formatJid, getTimestamp } from '../utils/helpers';
 import { muteManager } from '../services/mute-manager.js';
+import { msg } from '../utils/messages';
 
 export class WarnManager {
     private warnThreshold = config.warnThreshold;
@@ -24,17 +25,9 @@ export class WarnManager {
         // Get user name for message
         const userName = user.name || formatJid(jid);
 
-        let message = `⚠️ *Warning Issued*\n\n`;
-        message += `👤 User: ${userName}\n`;
-        message += `📌 Reason: ${reason}\n`;
-        message += `❗ Warnings: ${warnings}/${this.warnThreshold}`;
+        const shouldMute = warnings >= this.warnThreshold;
 
-        if (warnings >= this.warnThreshold) {
-            message += `\n\n🚫 *Auto-muting for ${this.muteDurationHours} hours*`;
-        }
-
-        // Send warning message to group
-        await waClient.sendMessage(groupJid, message);
+        await waClient.sendMessage(groupJid, msg.warningIssued(userName, reason, warnings, this.warnThreshold, shouldMute));
 
         // Check if should mute
         if (warnings >= this.warnThreshold) {
@@ -42,7 +35,7 @@ export class WarnManager {
             return {
                 success: true,
                 warning: warnings,
-                message,
+                message: 'Warning issued - auto-muting',
                 shouldMute: true,
             };
         }
@@ -50,7 +43,7 @@ export class WarnManager {
         return {
             success: true,
             warning: warnings,
-            message,
+            message: 'Warning issued',
             shouldMute: false,
         };
     }

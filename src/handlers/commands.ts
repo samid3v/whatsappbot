@@ -8,6 +8,7 @@ import { waClient } from '../client';
 import { userOps, logOps } from '../database/db';
 import { formatJid, formatDate } from '../utils/helpers';
 import { statsManager } from '../services/stats-manager';
+import { msg } from '../utils/messages';
 import tournamentOps from '../services/tournament-manager';
 
 // Command map
@@ -74,7 +75,7 @@ export async function checkPermission(context: CommandContext, requiredRole?: Us
 
     return {
         allowed: false,
-        message: `⚠️ You need to be at least a ${requiredRole[0]} to use this command.`,
+        message: msg.permissionDenied(requiredRole[0]),
     };
 }
 
@@ -111,7 +112,7 @@ registerCommand({
         const user = userOps.get(userJid);
         const userName = user?.name || formatJid(userJid);
         await waClient.sendMessage(context.jid,
-            `📊 *${userName}* has ${warnings}/${config.warnThreshold} warnings`
+            msg.warningsCheck(userName, warnings, config.warnThreshold)
         );
     },
 });
@@ -138,7 +139,7 @@ registerCommand({
         }
 
         if (!userJid) {
-            await waClient.sendMessage(context.jid, `❌ Please mention a user to mute or reply to their message!\nUsage: .mute @user [duration] [reason]`);
+            await waClient.sendMessage(context.jid, msg.missingMention('.mute @user [duration] [reason]'));
             return;
         }
 
@@ -197,7 +198,7 @@ registerCommand({
         }
 
         if (!userJid) {
-            await waClient.sendMessage(context.jid, `❌ Please mention a user to unmute or reply to their message!\nUsage: .unmute @user`);
+            await waClient.sendMessage(context.jid, msg.missingMention('.unmute @user'));
             return;
         }
 
@@ -224,13 +225,13 @@ registerCommand({
         }
 
         if (!userJid) {
-            await waClient.sendMessage(context.jid, `❌ Please mention a user!\nUsage: .muteinfo @user`);
+            await waClient.sendMessage(context.jid, msg.missingMention('.muteinfo @user'));
             return;
         }
 
         const user = userOps.get(userJid);
         if (!user || !user.is_muted) {
-            await waClient.sendMessage(context.jid, `ℹ️ User is not muted.`);
+            await waClient.sendMessage(context.jid, msg.muteInfo('Unknown'));
             return;
         }
 
@@ -260,9 +261,9 @@ registerCommand({
             const remainingMs = expiryDate.getTime() - now.getTime();
             const remainingMinutes = Math.max(0, Math.ceil(remainingMs / 60000));
 
-            await waClient.sendMention(context.jid, `ℹ️ *Mute Info*\n\n👤 User: ${userName}\n⏱️ Remaining: ${remainingMinutes} minutes\n🕐 Expires: ${formatDate(expiresAt)}`, [userJid]);
+            await waClient.sendMention(context.jid, msg.muteInfo(userName, `${remainingMinutes} min`, formatDate(expiresAt)), [userJid]);
         } else {
-            await waClient.sendMention(context.jid, `ℹ️ *Mute Info*\n\n👤 User: ${userName}\n⏱️ Duration: Indefinite`, [userJid]);
+            await waClient.sendMention(context.jid, msg.muteInfo(userName), [userJid]);
         }
     },
 });
@@ -286,13 +287,13 @@ registerCommand({
         }
 
         if (!userJid) {
-            await waClient.sendMessage(context.jid, `❌ Please mention a user!\nUsage: .mutetime @user <duration>`);
+            await waClient.sendMessage(context.jid, msg.missingMention('.mutetime @user <duration>'));
             return;
         }
 
         const user = userOps.get(userJid);
         if (!user || !user.is_muted) {
-            await waClient.sendMessage(context.jid, `ℹ️ User is not muted.`);
+            await waClient.sendMessage(context.jid, msg.muteInfo('Unknown'));
             return;
         }
 
@@ -351,7 +352,7 @@ registerCommand({
             userName = formatJid(userJid);
         }
 
-        await waClient.sendMention(context.jid, `⏱️ *Mute Time Adjusted*\n\n👤 User: ${userName}\n📊 Previous: ${currentRemaining} minutes\n📊 New: ${newMinutes} minutes\n🕐 Expires: ${formatDate(newExpiry)}`, [userJid]);
+        await waClient.sendMention(context.jid, msg.muteTimeAdjusted(userName, `${currentRemaining}`, `${newMinutes}`, formatDate(newExpiry)), [userJid]);
     },
 });
 
@@ -368,7 +369,7 @@ registerCommand({
         const userJid = mention.replace('@', '') + '@s.whatsapp.net';
         await waClient.removeParticipant(context.jid, userJid);
         logOps.add('kick', context.jid, userJid);
-        await waClient.sendMessage(context.jid, `👋 User removed`);
+        await waClient.sendMessage(context.jid, msg.userRemoved());
     },
 });
 
@@ -385,7 +386,7 @@ registerCommand({
         const userJid = mention.replace('@', '') + '@s.whatsapp.net';
         await roleManager.setUserRole(userJid, 'moderator');
         await waClient.promoteParticipant(context.jid, userJid);
-        await waClient.sendMention(context.jid, `⬆️ @${formatJid(userJid)} is now a Moderator!`, [userJid]);
+        await waClient.sendMention(context.jid, msg.promoted(formatJid(userJid), '🛡️ Moderator'), [userJid]);
     },
 });
 
@@ -402,7 +403,7 @@ registerCommand({
         const userJid = mention.replace('@', '') + '@s.whatsapp.net';
         await roleManager.setUserRole(userJid, 'member');
         await waClient.demoteParticipant(context.jid, userJid);
-        await waClient.sendMention(context.jid, `⬇️ @${formatJid(userJid)} is now a Member`, [userJid]);
+        await waClient.sendMention(context.jid, msg.demoted(formatJid(userJid), '👤 Member'), [userJid]);
     },
 });
 
@@ -419,7 +420,7 @@ registerCommand({
         const userJid = mention.replace('@', '') + '@s.whatsapp.net';
         await roleManager.setUserRole(userJid, 'admin');
         await waClient.promoteParticipant(context.jid, userJid);
-        await waClient.sendMention(context.jid, `⬆️ @${formatJid(userJid)} is now an Admin!`, [userJid]);
+        await waClient.sendMention(context.jid, msg.promoted(formatJid(userJid), '⚡ Admin'), [userJid]);
     },
 });
 
@@ -435,14 +436,14 @@ registerCommand({
         const metadata = await waClient.getGroupMetadata(context.jid);
 
         if (!metadata?.participants) {
-            await waClient.sendMessage(context.jid, '❌ Could not get group members');
+            await waClient.sendMessage(context.jid, msg.error());
             return;
         }
 
         const mentions = metadata.participants.map((p: any) => p.id);
         const memberNames = metadata.participants.map((p: any) => p.name || p.id.replace('@s.whatsapp.net', ''));
 
-        let tagMessage = `${message}\n\n`;
+        let tagMessage = `📢 ${'ATTENTION'}\n━━━━━━━━━━━━━━━━━━━━━━━━\n${message}\n\n`;
         for (const name of memberNames.slice(0, 30)) {
             tagMessage += `@${name}\n`;
         }
@@ -466,11 +467,12 @@ registerCommand({
         const admins = await waClient.getGroupAdmins(context.jid);
 
         if (admins.length === 0) {
-            await waClient.sendMessage(context.jid, '❌ No admins found');
+            await waClient.sendMessage(context.jid, msg.error());
             return;
         }
 
-        await waClient.sendMention(context.jid, message, admins);
+        const adminMsg = `📢 𝙰𝙳𝙼𝙸𝙽𝚂 𝙽𝙴𝙴𝙳𝙴𝙳\n━━━━━━━━━━━━━━━━━━━━━━━━\n${message}`;
+        await waClient.sendMention(context.jid, adminMsg, admins);
     },
 });
 
@@ -482,11 +484,7 @@ registerCommand({
     usage: '.settings',
     requiredRole: ['admin'],
     execute: async (args: string[], context: CommandContext) => {
-        let message = `⚙️ *Bot Settings*\n\n`;
-        message += `📝 Prefix: ${config.commandPrefix}\n`;
-        message += `⚠️ Warn Limit: ${config.warnThreshold}\n`;
-        message += `🔇 Mute Duration: ${config.muteDurationHours}h`;
-        await waClient.sendMessage(context.jid, message);
+        await waClient.sendMessage(context.jid, msg.settings(config.commandPrefix, config.warnThreshold, config.muteDurationHours));
     },
 });
 
@@ -499,15 +497,13 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const metadata = await waClient.getGroupMetadata(context.jid);
         if (!metadata) {
-            await waClient.sendMessage(context.jid, '❌ Could not get group info');
+            await waClient.sendMessage(context.jid, msg.error());
             return;
         }
 
-        let message = `📋 *Group Info*\n\n`;
-        message += `📛 Name: ${metadata.subject}\n`;
-        message += `👥 Members: ${metadata.participants?.length || 0}\n`;
-        message += `📅 Created: ${new Date(metadata.creation * 1000).toLocaleDateString()}`;
-        await waClient.sendMessage(context.jid, message);
+        await waClient.sendMessage(context.jid,
+            msg.groupInfo(metadata.subject, metadata.participants?.length || 0, new Date(metadata.creation * 1000).toLocaleDateString())
+        );
     },
 });
 
@@ -518,24 +514,19 @@ registerCommand({
     description: 'Show all mute commands',
     usage: '.mutehelp',
     execute: async (args: string[], context: CommandContext) => {
-        const message = `🔇 *Mute Commands*\n\n` +
-            `*.mute @user [duration] [reason]* - Mute a user\n` +
-            `  Examples:\n` +
-            `  • .mute @user 1h spam\n` +
-            `  • .mute @user 30m\n` +
-            `  • .mute @user (default 60 min)\n\n` +
-            `*.unmute @user* - Unmute a user\n` +
-            `  Example: .unmute @user\n\n` +
-            `*.muteinfo @user* (.mi) - Check mute status\n` +
-            `  Example: .mi @user\n\n` +
-            `*.mutetime @user* (.mt) - Adjust mute duration\n` +
-            `  Examples:\n` +
-            `  • .mt @user 30m (set to 30 min)\n` +
-            `  • .mt @user +15m (add 15 min)\n` +
-            `  • .mt @user -10m (reduce 10 min)\n` +
-            `  • .mt @user 0 (unmute)\n\n` +
-            `*Duration formats:* s (seconds), m (minutes), h (hours), d (days)\n` +
-            `  Examples: 30s, 15m, 2h, 1d`;
+        const message = `🔇 𝙼𝚄𝚃𝙴 𝙲𝙾𝙼𝙼𝙰𝙽𝙳𝚂 🔇\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `𝚖𝚞𝚝𝚎 — Mute a user\n` +
+            `  Usage: .mute @user [duration] [reason]\n` +
+            `  Examples: .mute @user 1h spam | .mute @user 30m\n\n` +
+            `𝚞𝚗𝚖𝚞𝚝𝚎 — Unmute a user\n` +
+            `  Usage: .unmute @user\n\n` +
+            `𝚖𝚞𝚝𝚎𝚒𝚗𝚏𝚘 — Check mute status\n` +
+            `  Usage: .mi @user\n\n` +
+            `𝚖𝚞𝚝𝚎𝚝𝚒𝚖𝚎 — Adjust mute duration\n` +
+            `  Usage: .mt @user 30m | .mt @user +15m | .mt @user -10m\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Duration: s (seconds) | m (minutes) | h (hours) | d (days)`;
         await waClient.sendMessage(context.jid, message);
     },
 });
@@ -556,7 +547,7 @@ registerCommand({
         const maxPlayers = args[2] ? parseInt(args[2], 10) : null;
 
         if (!['se', 'de', 'rr', 'single_elimination', 'double_elimination', 'round_robin'].includes(type)) {
-            await waClient.sendMessage(context.jid, `❌ Type: se (single), de (double), rr (round robin)`);
+            await waClient.sendMessage(context.jid, msg.tournamentInvalidType());
             return;
         }
 
@@ -569,12 +560,7 @@ registerCommand({
         const tournamentType = typeMap[type] || 'single_elimination';
         const tournament = tournamentOps.create(name, tournamentType, maxPlayers, context.senderJid);
 
-        let msg = `🏆 *Tournament Created!*\n\n`;
-        msg += `📛 Name: ${name}\n`;
-        msg += `📋 Type: ${tournamentType.replace('_', ' ')}\n`;
-        if (maxPlayers) msg += `👥 Max: ${maxPlayers}\n`;
-        msg += `\nUse .tj to join!`;
-        await waClient.sendMessage(context.jid, msg);
+        await waClient.sendMessage(context.jid, msg.tournamentCreated(name, tournamentType.replace('_', ' '), maxPlayers));
     },
 });
 
@@ -587,24 +573,24 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const active = tournamentOps.getActive();
         if (active.length === 0) {
-            await waClient.sendMessage(context.jid, `❌ No active tournaments. Use .tcr to create!`);
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
             return;
         }
 
         const t = active[0];
         if (t.status !== 'registration') {
-            await waClient.sendMessage(context.jid, `❌ Registration closed`);
+            await waClient.sendMessage(context.jid, msg.registrationClosed());
             return;
         }
 
         const participants = tournamentOps.getParticipants(t.id);
         if (t.max_players && participants.length >= t.max_players) {
-            await waClient.sendMessage(context.jid, `❌ Tournament full!`);
+            await waClient.sendMessage(context.jid, msg.tournamentFull());
             return;
         }
 
         tournamentOps.addParticipant(t.id, context.senderJid);
-        await waClient.sendMessage(context.jid, `✅ Joined *${t.name}!* (${participants.length + 1} players)`);
+        await waClient.sendMessage(context.jid, msg.tournamentJoined(t.name, participants.length + 1));
     },
 });
 
@@ -617,18 +603,18 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const active = tournamentOps.getActive();
         if (active.length === 0) {
-            await waClient.sendMessage(context.jid, `❌ No active tournaments`);
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
             return;
         }
 
         const t = active[0];
         if (t.status !== 'registration') {
-            await waClient.sendMessage(context.jid, `❌ Cannot leave - in progress`);
+            await waClient.sendMessage(context.jid, msg.cannotLeaveInProgress());
             return;
         }
 
         tournamentOps.removeParticipant(t.id, context.senderJid);
-        await waClient.sendMessage(context.jid, `✅ Left *${t.name}*`);
+        await waClient.sendMessage(context.jid, msg.tournamentLeft(t.name));
     },
 });
 
@@ -641,17 +627,14 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const active = tournamentOps.getActive();
         if (active.length === 0) {
-            await waClient.sendMessage(context.jid, `❌ No active tournaments`);
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
             return;
         }
 
         const t = active[0];
         const participants = tournamentOps.getParticipants(t.id);
 
-        let msg = `🏆 *${t.name}*\n\n`;
-        msg += `📋 Status: ${t.status}\n`;
-        msg += `👥 Players: ${participants.length}`;
-        await waClient.sendMessage(context.jid, msg);
+        await waClient.sendMessage(context.jid, msg.tournamentStatus(t.name, t.status, participants.length));
     },
 });
 
@@ -664,7 +647,7 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const active = tournamentOps.getActive();
         if (active.length === 0) {
-            await waClient.sendMessage(context.jid, `❌ No active tournaments`);
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
             return;
         }
 
@@ -672,11 +655,11 @@ registerCommand({
         const matches = tournamentOps.getMatches(t.id);
 
         if (matches.length === 0) {
-            await waClient.sendMessage(context.jid, `📊 No matches yet`);
+            await waClient.sendMessage(context.jid, msg.noMatchesYet());
             return;
         }
 
-        let msg = `📊 *Bracket - ${t.name}*\n\n`;
+        let roundsText = '';
         const rounds: Record<number, any[]> = {};
         for (const m of matches) {
             if (!rounds[m.round_number]) rounds[m.round_number] = [];
@@ -684,16 +667,16 @@ registerCommand({
         }
 
         for (const roundNum in rounds) {
-            msg += `*Round ${roundNum}*\n`;
+            roundsText += `Round ${roundNum}\n`;
             for (const m of rounds[roundNum]) {
                 const p1 = m.player1_name || formatJid(m.player1_jid);
                 const p2 = m.player2_name || formatJid(m.player2_jid);
-                msg += m.status === 'completed'
-                    ? `${p1} ${m.player1_score}-${m.player2_score} ${p2}\n`
-                    : `${p1} vs ${p2}\n`;
+                roundsText += m.status === 'completed'
+                    ? `  ${p1} ${m.player1_score}-${m.player2_score} ${p2}\n`
+                    : `  ${p1} vs ${p2}\n`;
             }
         }
-        await waClient.sendMessage(context.jid, msg);
+        await waClient.sendMessage(context.jid, msg.tournamentBracket(t.name, roundsText));
     },
 });
 
@@ -708,14 +691,14 @@ registerCommand({
         const score = args[0];
         const match = score.match(/(\d+)-(\d+)/);
         if (!match) {
-            await waClient.sendMessage(context.jid, `❌ Use: .tres 3-1`);
+            await waClient.sendMessage(context.jid, msg.invalidScore());
             return;
         }
 
         const myScore = parseInt(match[1], 10);
         const oppScore = parseInt(match[2], 10);
         await waClient.sendMessage(context.jid,
-            `✅ Result: ${myScore}-${oppScore}\nWinner: ${myScore > oppScore ? context.name : 'Opponent'}`
+            msg.tournamentResult(myScore, oppScore, myScore > oppScore ? context.name : 'Opponent')
         );
     },
 });
@@ -727,29 +710,20 @@ registerCommand({
     description: 'Show all tournament commands',
     usage: '.tourneyhelp',
     execute: async (args: string[], context: CommandContext) => {
-        const message = `🏆 *Tournament Commands*\n\n` +
-            `*.tcr [name] [type] [max]* - Create tournament\n` +
-            `  Aliases: .tc\n` +
-            `  Examples:\n` +
-            `  • .tcr "My Tournament" se 16\n` +
-            `  • .tcr "Weekly Cup" rr\n\n` +
-            `  *Types:* se (single elimination), de (double elimination), rr (round robin)\n\n` +
-            `*.tj* - Join active tournament\n` +
-            `  Aliases: .tourneyjoin\n` +
-            `  Example: .tj\n\n` +
-            `*.tl* - Leave tournament\n` +
-            `  Aliases: .tourneyleave\n` +
-            `  Example: .tl\n\n` +
-            `*.ts* - View tournament status\n` +
-            `  Aliases: .tourneystatus\n` +
-            `  Example: .ts\n\n` +
-            `*.tb* - View tournament bracket\n` +
-            `  Aliases: .tourneybracket\n` +
-            `  Example: .tb\n\n` +
-            `*.tres [score]* - Report match result\n` +
-            `  Aliases: .tourneyresult\n` +
-            `  Example: .tres 3-1`;
-        await waClient.sendMessage(context.jid, message);
+        const text = `🏆 𝚃𝙾𝚄𝚁𝙽𝙰𝙼𝙴𝙽𝚃 𝙲𝙾𝙼𝙼𝙰𝙽𝙳𝚂 🏆\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `𝚝𝚌𝚛 — Create tournament\n` +
+            `  Usage: .tcr [name] [type] [max]\n` +
+            `  Types: se (single) | de (double) | rr (round robin)\n\n` +
+            `𝚝𝚓 — Join active tournament\n` +
+            `𝚝𝚕 — Leave tournament\n` +
+            `𝚝𝚜 — View tournament status\n` +
+            `𝚝𝚋 — View bracket\n` +
+            `𝚝𝚛𝚎𝚜 — Report match result\n` +
+            `  Usage: .tres 3-1\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Aliases: .tc, .tourneyjoin, .tourneyleave, .tourneystatus, .tourneybracket, .tourneyresult`;
+        await waClient.sendMessage(context.jid, text);
     },
 });
 
@@ -789,22 +763,12 @@ registerCommand({
     name: 'pvpscores',
     aliases: ['pvp', 'pvpresult', 'pvpscore'],
     description: 'Record PVP match score (attach screenshot proof)',
-    usage: '.pvpscores @user1 vs @user2 3:1 (with screenshot)\n.me vs @opponent 3:1\n.25412345678 vs 25487654321 2:0',
+    usage: '.pvpscores @user1 vs @user2 3:1 (with screenshot)\n.vs @opponent 3:1\n.me vs @opponent 3:1\n.25412345678 vs 25487654321 2:0',
     minArgs: 3,
     execute: async (args: string[], context: CommandContext) => {
         // Require image proof
         if (!context.hasImage) {
-            await waClient.sendMessage(context.jid,
-                `📸 *Proof Required!*\n\n` +
-                `Attach a screenshot of the match result!\n\n` +
-                `*How to submit:*\n` +
-                `1. Take a screenshot of your eFootball match result\n` +
-                `2. Attach the image and add caption:\n\n` +
-                `   .pvpscores @user1 vs @user2 3:1\n` +
-                `   .me vs @opponent 3:1\n` +
-                `   .25412345678 vs 25487654321 2:0\n\n` +
-                `⚠️ No screenshot = No record!`
-            );
+            await waClient.sendMessage(context.jid, msg.proofRequired());
             return;
         }
 
@@ -816,14 +780,14 @@ registerCommand({
         //   .pvpscores 25412345678 vs 25487654321 2:0
         const vsIndex = args.findIndex(arg => arg.toLowerCase() === 'vs');
 
-        if (vsIndex === -1 || vsIndex < 1 || vsIndex >= args.length - 1) {
+        if (vsIndex === -1 || vsIndex >= args.length - 1) {
             await waClient.sendMessage(context.jid,
-                `❌ Invalid format!\n\n` +
-                `*Examples:*\n` +
-                `.pvpscores @user1 vs @user2 3:1\n` +
-                `.me vs @opponent 3:1\n` +
-                `.me vs 25412345678 2:0\n` +
-                `.25412345678 vs 25487654321 1:1`
+                msg.invalidFormat(
+                    `.pvpscores @user1 vs @user2 3:1\n` +
+                    `.pvpscores vs @opponent 3:1\n` +
+                    `.me vs @opponent 3:1\n` +
+                    `.25412345678 vs 25487654321 1:1`
+                )
             );
             return;
         }
@@ -833,9 +797,7 @@ registerCommand({
         const scoreMatch = scoreArg.match(/(\d+)[:\-](\d+)/);
 
         if (!scoreMatch) {
-            await waClient.sendMessage(context.jid,
-                `❌ Invalid score format. Use: 3:1 or 3-1`
-            );
+            await waClient.sendMessage(context.jid, msg.invalidScore());
             return;
         }
 
@@ -843,13 +805,26 @@ registerCommand({
         const player2Score = parseInt(scoreMatch[2], 10);
 
         // Resolve player identifiers to JIDs
-        const leftSide = args.slice(0, vsIndex);
+        // If vs is at index 0, sender is player1 (e.g. ".pvpscores vs @opponent 3:1")
+        const leftSide = vsIndex === 0 ? ['me'] : args.slice(0, vsIndex);
         const rightSide = args.slice(vsIndex + 1, args.length - 1);
 
         const mentionedJids = context.mentionedJids || [];
         let mentionIndex = 0;
 
-        function resolvePlayer(tokens: string[]): string | null {
+        // Cache group metadata for resolving tags when tagging is disabled
+        let groupParticipants: { id: string; name?: string; notify?: string }[] | null = null;
+        async function getGroupParticipants() {
+            if (!groupParticipants) {
+                try {
+                    const metadata = await waClient.getGroupMetadata(context.jid);
+                    groupParticipants = metadata?.participants || [];
+                } catch { groupParticipants = []; }
+            }
+            return groupParticipants;
+        }
+
+        async function resolvePlayer(tokens: string[]): Promise<string | null> {
             for (const token of tokens) {
                 const lower = token.toLowerCase();
 
@@ -860,43 +835,56 @@ registerCommand({
 
                 // @mention from WhatsApp
                 if (token.startsWith('@')) {
+                    const cleanTag = token.replace('@', '');
+
+                    // Try real mention JID first
                     if (mentionIndex < mentionedJids.length) {
-                        return mentionedJids[mentionIndex++];
+                        const jid = mentionedJids[mentionIndex++];
+                        if (jid !== context.senderJid) {
+                            return jid;
+                        }
+                        // Skip self-mentions - don't increment mentionIndex for skipped entries
+                        // Fall through to try other resolution methods
                     }
-                    // If no mention JID available, try extracting phone from @tag
-                    const phone = token.replace('@', '');
-                    if (/^\d{7,15}$/.test(phone)) {
-                        return phone + '@s.whatsapp.net';
+
+                    // Phone number fallback (e.g. @25412345678)
+                    if (/^\d{7,15}$/.test(cleanTag)) {
+                        const jid = cleanTag + '@s.whatsapp.net';
+                        if (jid !== context.senderJid) return jid;
+                    }
+
+                    // Match against group participants (for tagging-disabled users)
+                    const participants = await getGroupParticipants();
+                    if (participants) {
+                        for (const p of participants) {
+                            const phone = p.id.replace('@s.whatsapp.net', '').replace('@lid', '');
+                            if (phone === cleanTag && p.id !== context.senderJid) return p.id;
+                            if (p.name && p.name.toLowerCase() === cleanTag.toLowerCase() && p.id !== context.senderJid) return p.id;
+                            if (p.notify && p.notify === cleanTag && p.id !== context.senderJid) return p.id;
+                        }
                     }
                 }
 
                 // Raw phone number (7-15 digits)
                 const cleanPhone = token.replace(/[^0-9]/g, '');
                 if (/^\d{7,15}$/.test(cleanPhone)) {
-                    return cleanPhone + '@s.whatsapp.net';
+                    const jid = cleanPhone + '@s.whatsapp.net';
+                    if (jid !== context.senderJid) return jid;
                 }
             }
             return null;
         }
 
-        const player1Jid = resolvePlayer(leftSide);
-        const player2Jid = resolvePlayer(rightSide);
+        const player1Jid = await resolvePlayer(leftSide);
+        const player2Jid = await resolvePlayer(rightSide);
 
         if (!player1Jid || !player2Jid) {
-            await waClient.sendMessage(context.jid,
-                `❌ Could not identify both players!\n\n` +
-                `*Options:*\n` +
-                `• @mention players: @user1 vs @user2\n` +
-                `• Use "me" for yourself: me vs @user\n` +
-                `• Use phone numbers: 25412345678 vs 25487654321`
-            );
+            await waClient.sendMessage(context.jid, msg.unresolvedPlayers());
             return;
         }
 
         if (player1Jid === player2Jid) {
-            await waClient.sendMessage(context.jid,
-                `❌ You can't play against yourself!`
-            );
+            await waClient.sendMessage(context.jid, msg.selfMatch());
             return;
         }
 
@@ -925,7 +913,7 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const matchId = parseInt(args[0], 10);
         if (isNaN(matchId)) {
-            await waClient.sendMessage(context.jid, `❌ Invalid match ID. Usage: .pvpapprove <match_id>`);
+            await waClient.sendMessage(context.jid, msg.usage('.pvpapprove <match_id>'));
             return;
         }
 
@@ -949,7 +937,7 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const matchId = parseInt(args[0], 10);
         if (isNaN(matchId)) {
-            await waClient.sendMessage(context.jid, `❌ Invalid match ID. Usage: .pvpreject <match_id> <reason>`);
+            await waClient.sendMessage(context.jid, msg.usage('.pvpreject <match_id> <reason>'));
             return;
         }
 
@@ -1020,26 +1008,24 @@ registerCommand({
         if (args[0]) {
             const cmd = getCommand(args[0]);
             if (cmd) {
-                let msg = `📖 *${cmd.name}*\n\n📝 ${cmd.description}\n📋 ${cmd.usage}`;
-                await waClient.sendMessage(context.jid, msg);
+                await waClient.sendMessage(context.jid, msg.helpCommand(cmd.name, cmd.description, cmd.usage));
                 return;
             }
         }
 
-        let msg = `📖 *Commands*\n\n`;
-        msg += `*Moderation:*\n`;
-        msg += `.warn, .mute, .unmute, .kick\n`;
-        msg += `.promote, .demote, .setadmin\n`;
-        msg += `.tagall, .tagadmin\n\n`;
-        msg += `*Tournament:*\n`;
-        msg += `.tcr, .tj, .tl, .ts, .tb, .tres\n\n`;
-        msg += `*Stats:*\n`;
-        msg += `.lb, .profile\n\n`;
-        msg += `*PVP:*\n`;
-        msg += `.pvpscores, .pvplb, .pvpstats\n`;
-        msg += `.pvpapprove, .pvpreject, .pvppending\n\n`;
-        msg += `.help [cmd] for details`;
-        await waClient.sendMessage(context.jid, msg);
+        const categories = `𝙼𝚘𝚍𝚎𝚛𝚊𝚝𝚒𝚘𝚗\n` +
+            `  .warn  .mute  .unmute  .kick\n` +
+            `  .promote  .demote  .setadmin\n` +
+            `  .tagall  .tagadmin\n\n` +
+            `𝚃𝚘𝚞𝚛𝚗𝚊𝚖𝚎𝚗𝚝\n` +
+            `  .tcr  .tj  .tl  .ts  .tb  .tres\n\n` +
+            `𝚂𝚝𝚊𝚝𝚜\n` +
+            `  .lb  .profile\n\n` +
+            `𝙿𝚅𝙿\n` +
+            `  .pvpscores  .pvplb  .pvpstats\n` +
+            `  .pvpapprove  .pvpreject  .pvppending`;
+
+        await waClient.sendMessage(context.jid, msg.helpGeneral(categories));
     },
 });
 

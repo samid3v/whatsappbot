@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+tsconfig.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# WhatsApp session data
+sessions/
+
+# SQLite database
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temp files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Kilo/Copilot config
+.kilocode/

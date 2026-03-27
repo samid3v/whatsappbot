@@ -1,6 +1,7 @@
 import { userOps, logOps } from '../database/db';
 import { waClient } from '../client';
 import { formatJid, formatDate, formatDurationString } from '../utils/helpers';
+import { msg } from '../utils/messages';
 
 export class MuteManager {
     private muteTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -52,18 +53,8 @@ export class MuteManager {
             userName = formatJid(jid);
         }
 
-        let message = `🔇 *User Muted*
-
-`;
-        message += `👤 User: ${userName}\n`;
-        message += `📌 Reason: ${reason}\n`;
-        message += `⏱️ Duration: ${formatDurationString(durationMinutes)}\n`;
-        message += `🕐 Expires: ${formatDate(expiresAt)}\n\n`;
-        message += `⚠️ *Your messages will be deleted while muted!*\n`;
-        message += `🚫 Repeated messages may result in removal from group.`;
-
         // Send mute message to group with mention
-        await waClient.sendMention(groupJid, message, [jid]);
+        await waClient.sendMention(groupJid, msg.muted(userName, reason, formatDurationString(durationMinutes), formatDate(expiresAt), jid), [jid]);
 
         // Set auto-unmute timer
         const timer = setTimeout(async () => {
@@ -75,7 +66,7 @@ export class MuteManager {
         return {
             success: true,
             expiresAt,
-            message,
+            message: 'User muted',
         };
     }
 
@@ -140,16 +131,17 @@ export class MuteManager {
             userName = formatJid(jid);
         }
 
-        let message = `🔊 *User Unmuted*\n\n`;
-        message += `👤 User: ${userName}\n`;
-        message += `✅ The user can now send messages again.`;
+        let message = `🔊 𝚄𝚂𝙴𝚁 𝚄𝙽𝙼𝚄𝚃𝙴𝙳 🔊\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `𝚄𝚂𝙴𝚁: @~~ ${userName}\n`;
+        message += `𝚂𝚃𝙰𝚃𝚄𝚂: Can send messages again ✅`;
 
         // Send unmute message to group with mention
         await waClient.sendMention(groupJid, message, [jid]);
 
         return {
             success: true,
-            message,
+            message: 'User unmuted',
         };
     }
 

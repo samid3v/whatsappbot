@@ -8,6 +8,7 @@ import { userOps } from '../database/db';
 import { CommandContext } from '../types';
 import config, { isGroupAllowed } from '../utils/config';
 import { formatJid } from '../utils/helpers';
+import { msg } from '../utils/messages';
 
 interface MessageData {
     msg: any;
@@ -105,16 +106,16 @@ export class MessageHandler {
                             // Clear mute data since user is kicked
                             userOps.unmute(senderJid);
                             userOps.clearMutedSpamData(senderJid);
-                            await waClient.sendMention(jid, `🚫 *User Kicked*\n\n@${formatJid(senderJid)}\n\n⚠️ Removed from group for sending ${messageCount} messages while muted.`, [senderJid]);
+                            await waClient.sendMention(jid, msg.userKicked(formatJid(senderJid), `${messageCount} messages while muted`), [senderJid]);
                         } catch (e) {
                             console.log('Could not kick user:', e);
-                            await waClient.sendMessage(jid, `⚠️ ${userName} has been muted ${messageCount} times and should be removed manually.`);
+                            await waClient.sendMessage(jid, `⚠️ ${userName} should be removed manually (${messageCount} muted messages).`);
                         }
                     } else if (messageCount >= 3) {
                         // Warn the user about being kicked
                         const remaining = 5 - messageCount;
                         console.log(`[MuteSpam] Warning user ${senderJid} - ${remaining} messages until kick`);
-                        await waClient.sendMention(jid, `⚠️ *Mute Warning*\n\n@${formatJid(senderJid)}\n\nYou have sent ${messageCount} messages while muted.\n${remaining} more messages will result in removal from the group!\n\nPlease respect the mute.`, [senderJid]);
+                        await waClient.sendMention(jid, msg.muteWarning(remaining), [senderJid]);
                     }
 
                     return;
@@ -143,7 +144,7 @@ export class MessageHandler {
                         try {
                             await waClient.removeParticipant(jid, senderJid);
                             userOps.clearLinkSpamData(senderJid);
-                            await waClient.sendMention(jid, `🚫 *User Kicked for Link Spam*\n\n@${formatJid(senderJid)}\n\n⚠️ Removed for posting ${linkCount} links.`, [senderJid]);
+                            await waClient.sendMention(jid, msg.linkSpamKicked(linkCount), [senderJid]);
                         } catch (e) {
                             console.log('Could not kick user:', e);
                         }
@@ -155,7 +156,7 @@ export class MessageHandler {
                     } else if (linkCount >= 1) {
                         // Warn for first links
                         console.log(`[LinkSpam] Warning ${senderJid} for link (${linkCount}/5)`);
-                        await waClient.sendMention(jid, `⚠️ *Link Warning*\n\n@${formatJid(senderJid)}\n\nLinks are not allowed in this group!\n\nLink count: ${linkCount}/5\n\n3+ links = mute\n5+ links = kick`, [senderJid]);
+                        await waClient.sendMention(jid, msg.linkWarning(linkCount), [senderJid]);
                     }
                     return;
                 }
@@ -169,7 +170,7 @@ export class MessageHandler {
                 const cmd = getCommand(command.name);
                 console.log(`📦 Command handler: ${cmd ? cmd.name : 'NOT FOUND'}`);
                 if (!cmd) {
-                    await waClient.sendMessage(jid, `❓ Unknown command: ${command.name}\nUse !help for available commands.`);
+                    await waClient.sendMessage(jid, msg.unknownCommand(command.name));
                     return;
                 }
 
@@ -186,7 +187,7 @@ export class MessageHandler {
 
                 // Check minimum arguments
                 if (cmd.minArgs && command.args.length < cmd.minArgs) {
-                    await waClient.sendMessage(jid, `📋 Usage: ${cmd.usage}`);
+                    await waClient.sendMessage(jid, msg.usage(cmd.usage));
                     return;
                 }
 
@@ -199,22 +200,17 @@ export class MessageHandler {
                     if (errorMsg.includes('SessionError') || errorMsg.includes('No sessions') || errorMsg.includes('sender-key')) {
                         console.log('Session not established for group, attempting to establish...');
                         try {
-                            // Try to establish session by sending a message
-                            await waClient.sendMessage(jid, '🔄 Initializing bot session...');
-                            // Retry the command
+                            await waClient.sendMessage(jid, msg.sessionInit());
                             await cmd.execute(command.args, permission);
                         } catch (retryError) {
                             console.error('Session establishment failed:', retryError);
-                            // Don't try to send message - the group may be inaccessible
                         }
                     } else if (errorMsg.includes('Cannot send to this group') || errorMsg.includes('not-acceptable')) {
                         console.log('Bot cannot send to this group - may have been removed');
-                        // Don't try to send any message
                     } else {
                         console.error('Command execution error:', error);
-                        // Only try to send error message if we can send to this group
                         try {
-                            await waClient.sendMessage(jid, '❌ An error occurred while executing the command.');
+                            await waClient.sendMessage(jid, msg.error());
                         } catch (sendError) {
                             console.log('Cannot send error message to group');
                         }

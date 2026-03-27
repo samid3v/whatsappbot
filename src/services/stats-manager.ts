@@ -1,6 +1,7 @@
 import { statsOps, userOps } from '../database/db';
 import { waClient } from '../client';
 import { formatJid } from '../utils/helpers';
+import { msg } from '../utils/messages';
 
 export class StatsManager {
     async getPlayerStats(userJid: string): Promise<{
@@ -62,23 +63,20 @@ export class StatsManager {
         const leaderboard = await this.getLeaderboard(limit);
 
         if (leaderboard.length === 0) {
-            return '📊 No players on the leaderboard yet!';
+            return msg.leaderboardEmpty();
         }
 
-        let message = '🏆 *Leaderboard* 🏆\n\n';
-
+        let entries = '';
         leaderboard.forEach((player, index) => {
             const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
             const name = player.name || formatJid(player.user_jid);
-            const points = player.points || 0;
 
-            message += `${medal} *${name}*\n`;
-            message += `   📊 ${player.wins}W/${player.losses}L (${player.points} pts)\n`;
-            message += `   ⚽ ${player.goals_scored} goals\n`;
-            message += `\n`;
+            entries += `${medal} *${name}*\n`;
+            entries += `   ${player.wins}W/${player.losses}L (${player.points} pts) | ⚽ ${player.goals_scored} goals\n`;
+            entries += `\n`;
         });
 
-        return message;
+        return msg.leaderboard(entries);
     }
 
     async sendLeaderboard(jid: string, limit: number = 10): Promise<void> {
@@ -96,26 +94,12 @@ export class StatsManager {
             return;
         }
 
-        let message = `👤 *Player Profile: ${name}*\n\n`;
-        message += `📊 *Match Stats*\n`;
-        message += `   Wins: ${stats.wins}\n`;
-        message += `   Losses: ${stats.losses}\n`;
-        message += `   Draws: ${stats.draws}\n`;
-        message += `   Win Rate: ${stats.winRate}%\n\n`;
-
-        message += `⚽ *Goals*\n`;
-        message += `   Scored: ${stats.goalsScored}\n`;
-        message += `   Conceded: ${stats.goalsConceded}\n`;
-        message += `   Average: ${stats.avgGoals} per match\n\n`;
-
-        message += `🏆 *Tournaments*\n`;
-        message += `   Won: ${stats.tournamentsWon}\n`;
-        message += `   Played: ${stats.tournamentsPlayed}\n\n`;
-
-        message += `🎯 *Challenges*\n`;
-        message += `   Completed: ${stats.challengesCompleted}`;
-
-        await waClient.sendMessage(jid, message);
+        await waClient.sendMessage(jid, msg.statsProfile(
+            name,
+            stats.wins, stats.losses, stats.draws, stats.winRate,
+            stats.goalsScored, stats.goalsConceded, stats.avgGoals,
+            stats.tournamentsWon, stats.tournamentsPlayed, stats.challengesCompleted
+        ));
     }
 }
 
