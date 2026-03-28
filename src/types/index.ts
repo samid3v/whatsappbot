@@ -50,10 +50,12 @@ export interface Tournament {
     type: TournamentType;
     status: TournamentStatus;
     max_players: number | null;
-    created_by: string;
-    created_at: string;
+    current_round: number;
+    creator_jid: string;
+    winner_jid: string | null;
     started_at: string | null;
     ended_at: string | null;
+    created_at: string;
 }
 
 // Tournament participant
@@ -77,7 +79,25 @@ export interface TournamentMatch {
     round_number: number;
     match_number: number;
     status: MatchStatus;
-    scheduled_at: string | null;
+    created_at: string;
+}
+
+// Tournament standings (isolated per tournament)
+export interface TournamentStanding {
+    id: number;
+    tournament_id: number;
+    user_jid: string;
+    position: number | null;
+    played: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    goals_for: number;
+    goals_against: number;
+    points: number;
+    status: string;
+    created_at: string;
+    updated_at: string;
 }
 
 // Scheduled match

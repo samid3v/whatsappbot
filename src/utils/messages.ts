@@ -147,15 +147,17 @@ export const msg = {
     },
 
     // ── PVP ──
-    matchSubmitted(matchId: number, p1: string, s1: number, s2: number, p2: string): string {
+    matchSubmitted(matchId: number, p1: string, s1: number, s2: number, p2: string, hasProof: boolean = false): string {
         return `⚽ ${monoBold('MATCH SUBMITTED')} ⚽\n` +
             SEPARATOR + '\n' +
             `${field('𝙼𝙰𝚃𝙲𝙷', `#${matchId}`)}\n` +
             `${field('𝙿𝙻𝙰𝚈𝙴𝚁𝚂', `${p1} vs ${p2}`)}\n` +
             `${field('𝚂𝙲𝙾𝚁𝙴', `${s1} - ${s2}`)}\n` +
             SEPARATOR + '\n' +
-            `⏳ Pending Admin Approval\n` +
-            `📸 Screenshot proof attached`;
+            `⏳ Awaiting Admin Approval\n` +
+            `${field('𝙸𝙳', `#${matchId}`)}\n` +
+            `${field('𝙿𝚁𝙾𝙾𝙵', hasProof ? '📸 Attached' : '❌ No screenshot')}\n` +
+            `\n💡 Admins: .pvpapprove ${matchId} or .pvpreject ${matchId} <reason>`;
     },
 
     matchApproved(matchId: number, p1: string, s1: number, s2: number, p2: string, result: string, p1Points: string, p2Points: string, adminName: string): string {
@@ -167,6 +169,44 @@ export const msg = {
             DIVIDER + '\n' +
             `📊 Points: ${p1} (${p1Points}) | ${p2} (${p2Points})\n` +
             `${field('𝙰𝙿𝙿𝚁𝙾𝚅𝙴𝙳 𝙱𝚈', adminName)}`;
+    },
+
+    tourneyMatchSubmitted(matchId: number, p1: string, s1: number, s2: number, p2: string, tourneyName: string, round: number, hasProof: boolean): string {
+        return `⚽ ${monoBold('TOURNEY MATCH SUBMITTED')} ⚽\n` +
+            SEPARATOR + '\n' +
+            `${field('𝙼𝙰𝚃𝙲𝙷', `#${matchId}`)}\n` +
+            `${field('𝚃𝙾𝚄𝚁𝙽𝙰𝙼𝙴𝙽𝚃', tourneyName)}\n` +
+            `${field('𝚁𝙾𝚄𝙽𝙳', round)}\n` +
+            `${field('𝙿𝙻𝙰𝚈𝙴𝚁𝚂', `${p1} vs ${p2}`)}\n` +
+            `${field('𝚂𝙲𝙾𝚁𝙴', `${s1} - ${s2}`)}\n` +
+            SEPARATOR + '\n' +
+            `⏳ Awaiting Admin Approval\n` +
+            `${field('𝙿𝚁𝙾𝙾𝙵', hasProof ? '📸 Attached' : '❌ No screenshot — may be rejected!')}\n` +
+            `\n💡 Admins: .tapprove ${matchId} or .treject ${matchId} <reason>`;
+    },
+
+    tourneyMatchApproved(matchId: number, p1: string, s1: number, s2: number, p2: string, result: string, tourneyName: string, adminName: string): string {
+        return `✅ ${monoBold('TOURNEY MATCH APPROVED')} ⚽\n` +
+            SEPARATOR + '\n' +
+            `${field('𝙼𝙰𝚃𝙲𝙷', `#${matchId}`)}\n` +
+            `${field('𝚃𝙾𝚄𝚁𝙽𝙰𝙼𝙴𝙽𝚃', tourneyName)}\n` +
+            `${field('𝚂𝙲𝙾𝚁𝙴', `${p1} ${s1} - ${s2} ${p2}`)}\n` +
+            `${field('𝚁𝙴𝚂𝚄𝙻𝚃', result)}\n` +
+            SEPARATOR + '\n' +
+            `${field('𝙰𝙿𝙿𝚁𝙾𝚅𝙴𝙳 𝙱𝚈', adminName)}\n` +
+            `📊 Standings updated`;
+    },
+
+    tourneyMatchRejected(matchId: number, p1: string, s1: number, s2: number, p2: string, reason: string, tourneyName: string, adminName: string): string {
+        return `❌ ${monoBold('TOURNEY MATCH REJECTED')} ❌\n` +
+            SEPARATOR + '\n' +
+            `${field('𝙼𝙰𝚃𝙲𝙷', `#${matchId}`)}\n` +
+            `${field('𝚃𝙾𝚄𝚁𝙽𝙰𝙼𝙴𝙽𝚃', tourneyName)}\n` +
+            `${field('𝚂𝙲𝙾𝚁𝙴', `${p1} ${s1} - ${s2} ${p2}`)}\n` +
+            `${field('𝚁𝙴𝙰𝚂𝙾𝙽', reason)}\n` +
+            `${field('𝚁𝙴𝙹𝙴𝙲𝚃𝙴𝙳 𝙱𝚈', adminName)}\n` +
+            SEPARATOR + '\n' +
+            `🔄 Players must replay this match`;
     },
 
     matchRejected(matchId: number, p1: string, s1: number, s2: number, p2: string, reason: string, adminName: string): string {
@@ -435,7 +475,7 @@ export const msg = {
 
     tournamentInvalidType(): string {
         return `❌ ${monoBold('INVALID TYPE')}\n` +
-            `Options: se (single) | de (double) | rr (round robin)`;
+            `Options: se (knockout) | de (double elim) | rr (league 1 leg) | rr2 (league 2 legs)`;
     },
 
     noActiveTournament(): string {

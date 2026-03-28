@@ -12,7 +12,8 @@ class PvpManager {
         player2Jid: string,
         player1Score: number,
         player2Score: number,
-        groupJid: string
+        groupJid: string,
+        hasProof: boolean = false
     ): Promise<string> {
         // Record the match as pending
         const match = pvpOps.recordMatch(player1Jid, player2Jid, player1Score, player2Score);
@@ -23,7 +24,7 @@ class PvpManager {
         const p1Name = p1User?.name || formatJid(player1Jid);
         const p2Name = p2User?.name || formatJid(player2Jid);
 
-        return msg.matchSubmitted(match.id, p1Name, player1Score, player2Score, p2Name);
+        return msg.matchSubmitted(match.id, p1Name, player1Score, player2Score, p2Name, hasProof);
     }
 
     // Approve a pending match (admin only)

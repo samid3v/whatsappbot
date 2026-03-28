@@ -1,7 +1,7 @@
 import { CommandContext, UserRole } from '../types';
 import { waClient } from '../client';
 import { statsManager } from '../services/stats-manager';
-import tournamentOps from '../services/tournament-manager';
+import { tournamentOps } from '../database/db';
 import { userOps } from '../database/db';
 import { formatJid } from '../utils/helpers';
 import config from '../utils/config';
@@ -72,7 +72,7 @@ export const tournamentCommands = {
                 return;
             }
 
-            const tournament = tournamentOps.create(name, type, maxPlayers, context.senderJid);
+            const tournament = tournamentOps.create(name, type, 1, maxPlayers, context.senderJid);
 
             let message = `🏆 *Tournament Created!* 🏆\n\n`;
             message += `📛 Name: ${name}\n`;

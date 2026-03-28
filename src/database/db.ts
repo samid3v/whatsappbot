@@ -53,9 +53,14 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     type TEXT NOT NULL,
+    legs INTEGER NOT NULL DEFAULT 1,
     max_players INTEGER,
+    current_round INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'registration',
     creator_jid TEXT NOT NULL,
+    winner_jid TEXT,
+    started_at TEXT,
+    ended_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -75,16 +80,41 @@ db.exec(`
     player1_jid TEXT NOT NULL,
     player2_jid TEXT NOT NULL,
     player1_score INTEGER,
-    player2_score,
+    player2_score INTEGER,
     winner_jid TEXT,
     round_number INTEGER NOT NULL,
     match_number INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'pending',
+    match_status TEXT NOT NULL DEFAULT 'pending',
+    proof TEXT,
+    approved_by TEXT,
+    rejection_reason TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
   );
 
   CREATE INDEX IF NOT EXISTS idx_tournament_matches_tid ON tournament_matches(tournament_id);
+
+  CREATE TABLE IF NOT EXISTS tournament_standings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    user_jid TEXT NOT NULL,
+    position INTEGER,
+    played INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    draws INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    goals_for INTEGER NOT NULL DEFAULT 0,
+    goals_against INTEGER NOT NULL DEFAULT 0,
+    points INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    UNIQUE(tournament_id, user_jid)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tournament_standings_tid ON tournament_standings(tournament_id);
+  CREATE INDEX IF NOT EXISTS idx_tournament_standings_points ON tournament_standings(tournament_id, points DESC);
 
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -138,6 +168,19 @@ try { db.exec("ALTER TABLE pvp_matches ADD COLUMN status TEXT NOT NULL DEFAULT '
 try { db.exec("ALTER TABLE pvp_matches ADD COLUMN approved_by TEXT"); } catch {}
 try { db.exec("ALTER TABLE pvp_matches ADD COLUMN rejection_reason TEXT"); } catch {}
 
+// Migrate existing tournaments table (add columns if missing)
+try { db.exec("ALTER TABLE tournaments ADD COLUMN current_round INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tournaments ADD COLUMN winner_jid TEXT"); } catch {}
+try { db.exec("ALTER TABLE tournaments ADD COLUMN started_at TEXT"); } catch {}
+try { db.exec("ALTER TABLE tournaments ADD COLUMN ended_at TEXT"); } catch {}
+try { db.exec("ALTER TABLE tournaments ADD COLUMN legs INTEGER NOT NULL DEFAULT 1"); } catch {}
+
+// Migrate existing tournament_matches tables (add columns if missing)
+try { db.exec("ALTER TABLE tournament_matches ADD COLUMN match_status TEXT NOT NULL DEFAULT 'pending'"); } catch {}
+try { db.exec("ALTER TABLE tournament_matches ADD COLUMN proof TEXT"); } catch {}
+try { db.exec("ALTER TABLE tournament_matches ADD COLUMN approved_by TEXT"); } catch {}
+try { db.exec("ALTER TABLE tournament_matches ADD COLUMN rejection_reason TEXT"); } catch {}
+
 // ==================== PREPARED STATEMENTS ====================
 
 // User queries
@@ -176,19 +219,38 @@ const stmts = {
   getLeaderboard: db.prepare('SELECT * FROM player_stats ORDER BY wins DESC LIMIT ?'),
 
   // Tournaments
-  insertTournament: db.prepare(`INSERT INTO tournaments (name, type, max_players, status, creator_jid)
-    VALUES (?, ?, ?, 'registration', ?)`),
+  insertTournament: db.prepare(`INSERT INTO tournaments (name, type, legs, max_players, status, creator_jid)
+    VALUES (?, ?, ?, ?, 'registration', ?)`),
   getTournament: db.prepare('SELECT * FROM tournaments WHERE id = ?'),
   getActiveTournaments: db.prepare("SELECT * FROM tournaments WHERE status != 'completed'"),
-  updateTournamentStatus: db.prepare('UPDATE tournaments SET status = ? WHERE id = ?'),
   insertParticipant: db.prepare('INSERT INTO tournament_participants (tournament_id, user_jid) VALUES (?, ?)'),
   findParticipant: db.prepare('SELECT * FROM tournament_participants WHERE tournament_id = ? AND user_jid = ?'),
   deleteParticipant: db.prepare('DELETE FROM tournament_participants WHERE tournament_id = ? AND user_jid = ?'),
   getParticipants: db.prepare('SELECT * FROM tournament_participants WHERE tournament_id = ?'),
-  insertMatch: db.prepare(`INSERT INTO tournament_matches (tournament_id, player1_jid, player2_jid, round_number, status)
+  insertMatch: db.prepare(`INSERT INTO tournament_matches (tournament_id, player1_jid, player2_jid, round_number, match_status)
     VALUES (?, ?, ?, ?, 'pending')`),
   getTournamentMatches: db.prepare('SELECT * FROM tournament_matches WHERE tournament_id = ?'),
-  updateMatchResult: db.prepare("UPDATE tournament_matches SET player1_score = ?, player2_score = ?, status = 'completed' WHERE id = ?"),
+  updateMatchResult: db.prepare("UPDATE tournament_matches SET player1_score = ?, player2_score = ?, winner_jid = ?, match_status = 'pending_approval' WHERE id = ?"),
+  approveTournamentMatch: db.prepare("UPDATE tournament_matches SET match_status = 'approved', approved_by = ? WHERE id = ?"),
+  rejectTournamentMatch: db.prepare("UPDATE tournament_matches SET match_status = 'rejected', approved_by = ?, rejection_reason = ? WHERE id = ?"),
+  updateMatchStatus: db.prepare("UPDATE tournament_matches SET match_status = ? WHERE id = ?"),
+  getMatchById: db.prepare('SELECT * FROM tournament_matches WHERE id = ?'),
+  getTournamentPendingApproval: db.prepare("SELECT * FROM tournament_matches WHERE tournament_id = ? AND match_status = 'pending_approval'"),
+  getTournamentApproved: db.prepare("SELECT * FROM tournament_matches WHERE tournament_id = ? AND match_status = 'approved'"),
+  getTournamentCompleted: db.prepare("SELECT * FROM tournament_matches WHERE tournament_id = ? AND (match_status = 'approved' OR match_status = 'completed')"),
+  updateTournamentRound: db.prepare('UPDATE tournaments SET current_round = ? WHERE id = ?'),
+  updateTournamentStatus: db.prepare("UPDATE tournaments SET status = ?, started_at = CASE WHEN ? = 'in_progress' AND started_at IS NULL THEN datetime('now') ELSE started_at END, ended_at = CASE WHEN ? = 'completed' THEN datetime('now') ELSE ended_at END, winner_jid = CASE WHEN ? = 'completed' THEN ? ELSE winner_jid END WHERE id = ?"),
+
+  // Tournament standings
+  findStanding: db.prepare('SELECT * FROM tournament_standings WHERE tournament_id = ? AND user_jid = ?'),
+  insertStanding: db.prepare(`INSERT INTO tournament_standings (tournament_id, user_jid, played, wins, draws, losses, goals_for, goals_against, points, status)
+    VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 'active')`),
+  getStandings: db.prepare('SELECT * FROM tournament_standings WHERE tournament_id = ? ORDER BY points DESC, (goals_for - goals_against) DESC, goals_for DESC'),
+  getStandingByPosition: db.prepare('SELECT * FROM tournament_standings WHERE tournament_id = ? AND position = ?'),
+  updateStandingPosition: db.prepare('UPDATE tournament_standings SET position = ? WHERE id = ?'),
+  updateStandingStats: db.prepare(`UPDATE tournament_standings SET played = played + 1, wins = wins + ?, draws = draws + ?, losses = losses + ?,
+    goals_for = goals_for + ?, goals_against = goals_against + ?, points = points + ?, updated_at = datetime('now') WHERE tournament_id = ? AND user_jid = ?`),
+  deleteStandings: db.prepare('DELETE FROM tournament_standings WHERE tournament_id = ?'),
 
   // Logs
   insertLog: db.prepare('INSERT INTO logs (action, user_jid, target_jid, details) VALUES (?, ?, ?, ?)'),
@@ -392,8 +454,8 @@ export const statsOps = {
 // ==================== TOURNAMENT OPERATIONS ====================
 
 export const tournamentOps = {
-  create: (name: string, type: string, maxPlayers: number | null, creatorJid: string): any => {
-    const result = stmts.insertTournament.run(name, type, maxPlayers, creatorJid);
+  create: (name: string, type: string, legs: number, maxPlayers: number | null, creatorJid: string): any => {
+    const result = stmts.insertTournament.run(name, type, legs, maxPlayers, creatorJid);
     return stmts.getTournament.get(result.lastInsertRowid);
   },
 
@@ -405,8 +467,8 @@ export const tournamentOps = {
     return stmts.getActiveTournaments.all();
   },
 
-  updateStatus: (id: number, status: string): void => {
-    stmts.updateTournamentStatus.run(status, id);
+  updateStatus: (id: number, status: string, winnerJid?: string): void => {
+    stmts.updateTournamentStatus.run(status, status, status, status, winnerJid || null, id);
   },
 
   addParticipant: (tournamentId: number, userJid: string): void => {
@@ -426,16 +488,103 @@ export const tournamentOps = {
 
   addMatch: (tournamentId: number, player1Jid: string, player2Jid: string, roundNumber: number): any => {
     const result = stmts.insertMatch.run(tournamentId, player1Jid, player2Jid, roundNumber);
-    return stmts.getTournament.get(result.lastInsertRowid);
+    return stmts.getMatchById.get(result.lastInsertRowid);
   },
 
   getMatches: (tournamentId: number): any[] => {
     return stmts.getTournamentMatches.all(tournamentId);
   },
 
-  updateMatchResult: (matchId: number, player1Score: number, player2Score: number): void => {
-    stmts.updateMatchResult.run(player1Score, player2Score, matchId);
-  }
+  getMatchById: (matchId: number): any => {
+    return stmts.getMatchById.get(matchId);
+  },
+
+  // ===== MATCH RESULT SUBMISSION (with approval) =====
+
+  submitResult: (matchId: number, player1Score: number, player2Score: number, winnerJid: string): void => {
+    stmts.updateMatchResult.run(player1Score, player2Score, winnerJid, matchId);
+  },
+
+  approveMatch: (matchId: number, adminJid: string): void => {
+    stmts.approveTournamentMatch.run(adminJid, matchId);
+  },
+
+  rejectMatch: (matchId: number, adminJid: string, reason: string): void => {
+    stmts.rejectTournamentMatch.run(adminJid, reason, matchId);
+  },
+
+  getPendingApproval: (tournamentId: number): any[] => {
+    return stmts.getTournamentPendingApproval.all(tournamentId);
+  },
+
+  getApprovedMatches: (tournamentId: number): any[] => {
+    return stmts.getTournamentApproved.all(tournamentId);
+  },
+
+  getCompletedMatches: (tournamentId: number): any[] => {
+    return stmts.getTournamentCompleted.all(tournamentId);
+  },
+
+  updateMatchStatus: (matchId: number, status: string): void => {
+    stmts.updateMatchStatus.run(status, matchId);
+  },
+
+  updateRound: (tournamentId: number, round: number): void => {
+    stmts.updateTournamentRound.run(round, tournamentId);
+  },
+
+  // ===== TOURNAMENT STANDINGS (isolated per tournament) =====
+
+  getOrCreateStanding: (tournamentId: number, userJid: string): any => {
+    let standing = stmts.findStanding.get(tournamentId, userJid);
+    if (!standing) {
+      stmts.insertStanding.run(tournamentId, userJid);
+      standing = stmts.findStanding.get(tournamentId, userJid);
+    }
+    return standing;
+  },
+
+  getStandings: (tournamentId: number): any[] => {
+    return stmts.getStandings.all(tournamentId);
+  },
+
+  updateStandingAfterMatch: (tournamentId: number, userJid: string, goalsFor: number, goalsAgainst: number, result: 'win' | 'draw' | 'loss'): void => {
+    tournamentOps.getOrCreateStanding(tournamentId, userJid);
+
+    let wins = 0, draws = 0, losses = 0, points = 0;
+    if (result === 'win') { wins = 1; points = 3; }
+    else if (result === 'draw') { draws = 1; points = 1; }
+    else { losses = 1; }
+
+    stmts.updateStandingStats.run(wins, draws, losses, goalsFor, goalsAgainst, points, tournamentId, userJid);
+  },
+
+  applyMatchToStandings: (tournamentId: number, player1Jid: string, player2Jid: string, player1Score: number, player2Score: number): void => {
+    let result1: 'win' | 'draw' | 'loss';
+    let result2: 'win' | 'draw' | 'loss';
+
+    if (player1Score > player2Score) {
+      result1 = 'win'; result2 = 'loss';
+    } else if (player1Score < player2Score) {
+      result1 = 'loss'; result2 = 'win';
+    } else {
+      result1 = 'draw'; result2 = 'draw';
+    }
+
+    tournamentOps.updateStandingAfterMatch(tournamentId, player1Jid, player1Score, player2Score, result1);
+    tournamentOps.updateStandingAfterMatch(tournamentId, player2Jid, player2Score, player1Score, result2);
+  },
+
+  recalculatePositions: (tournamentId: number): void => {
+    const standings = stmts.getStandings.all(tournamentId) as any[];
+    standings.forEach((s, i) => {
+      stmts.updateStandingPosition.run(i + 1, s.id);
+    });
+  },
+
+  clearStandings: (tournamentId: number): void => {
+    stmts.deleteStandings.run(tournamentId);
+  },
 };
 
 export default tournamentOps;

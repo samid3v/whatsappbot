@@ -9,7 +9,7 @@ import { userOps, logOps } from '../database/db';
 import { formatJid, formatDate } from '../utils/helpers';
 import { statsManager } from '../services/stats-manager';
 import { msg } from '../utils/messages';
-import tournamentOps from '../services/tournament-manager';
+import { tournamentManager } from '../services/tournament-manager';
 
 // Command map
 const commands: Map<string, Command> = new Map();
@@ -532,43 +532,80 @@ registerCommand({
 });
 
 // ==================== TOURNAMENT COMMANDS ====================
+// Tournament system is SEPARATE from PVP.
+// PVP = daily friendly games with global leaderboard
+// Tournament = isolated competition with per-tournament standings, knockout/league brackets
+// Real football model: knockout needs 4/8/16/32/64 players, matches require screenshot + admin approval
 
-// Tournament create
+import { tournamentOps } from '../database/db';
+
+// Tournament create — block if one is already active
 registerCommand({
     name: 'tcr',
     aliases: ['tourneycreate', 'tc'],
-    description: 'Create tournament',
+    description: 'Create tournament (opens registration)',
     usage: '.tcr [name] [type] [max]',
     minArgs: 2,
     requiredRole: ['admin'],
     execute: async (args: string[], context: CommandContext) => {
+        // Block if any tournament is active
+        const active = tournamentOps.getActive();
+        if (active.length > 0) {
+            const t = active[0];
+            await waClient.sendMessage(context.jid,
+                `❌ Cannot create — *${t.name}* is still ${t.status}.\n` +
+                `Complete or end it first with .tend`
+            );
+            return;
+        }
+
         const name = args[0];
         const type = args[1];
         const maxPlayers = args[2] ? parseInt(args[2], 10) : null;
 
-        if (!['se', 'de', 'rr', 'single_elimination', 'double_elimination', 'round_robin'].includes(type)) {
+        if (!['se', 'de', 'rr', 'rr1', 'rr2', 'single_elimination', 'double_elimination', 'round_robin'].includes(type)) {
             await waClient.sendMessage(context.jid, msg.tournamentInvalidType());
             return;
         }
 
-        const typeMap: Record<string, string> = {
-            'se': 'single_elimination', 'single_elimination': 'single_elimination',
-            'de': 'double_elimination', 'double_elimination': 'double_elimination',
-            'rr': 'round_robin', 'round_robin': 'round_robin'
+        const typeMap: Record<string, { type: string; legs: number }> = {
+            'se': { type: 'single_elimination', legs: 1 },
+            'single_elimination': { type: 'single_elimination', legs: 1 },
+            'de': { type: 'double_elimination', legs: 1 },
+            'double_elimination': { type: 'double_elimination', legs: 1 },
+            'rr': { type: 'round_robin', legs: 1 },
+            'rr1': { type: 'round_robin', legs: 1 },
+            'rr2': { type: 'round_robin', legs: 2 },
+            'round_robin': { type: 'round_robin', legs: 1 },
         };
 
-        const tournamentType = typeMap[type] || 'single_elimination';
-        const tournament = tournamentOps.create(name, tournamentType, maxPlayers, context.senderJid);
+        const mapped = typeMap[type] || { type: 'single_elimination', legs: 1 };
+        const tournamentType = mapped.type;
+        const legs = mapped.legs;
+        const tournament = tournamentOps.create(name, tournamentType, legs, maxPlayers, context.senderJid);
 
-        await waClient.sendMessage(context.jid, msg.tournamentCreated(name, tournamentType.replace('_', ' '), maxPlayers));
+        const typeName = tournamentType === 'single_elimination' ? 'Knockout (4/8/16/32/64 players)' :
+            tournamentType === 'double_elimination' ? 'Double Elimination' :
+            legs === 2 ? 'League (1st & 2nd Leg)' : 'League (1st Leg)';
+
+        await waClient.sendMessage(context.jid,
+            `🏆 *TOURNAMENT CREATED* 🏆\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `📛 Name: ${name}\n` +
+            `📋 Type: ${typeName}\n` +
+            `${maxPlayers ? `👥 Max: ${maxPlayers}\n` : ''}` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `⏳ Registration open — use .tj to join!\n` +
+            `📸 Screenshot proof will be required`
+        );
     },
 });
 
 // Tournament join
 registerCommand({
     name: 'tj',
-    aliases: ['tourneyjoin', 'tj'],
-    description: 'Join tournament',
+    aliases: ['tourneyjoin'],
+    description: 'Join active tournament',
     usage: '.tj',
     execute: async (args: string[], context: CommandContext) => {
         const active = tournamentOps.getActive();
@@ -618,6 +655,26 @@ registerCommand({
     },
 });
 
+// Tournament start — validates knockout sizes, generates bracket
+registerCommand({
+    name: 'tstart',
+    aliases: ['tourneystart'],
+    description: 'Start tournament (generates bracket)',
+    usage: '.tstart',
+    requiredRole: ['admin'],
+    execute: async (args: string[], context: CommandContext) => {
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+            return;
+        }
+
+        const t = active[0];
+        const result = tournamentManager.startTournament(t.id);
+        await waClient.sendMessage(context.jid, result);
+    },
+});
+
 // Tournament status
 registerCommand({
     name: 'ts',
@@ -633,8 +690,28 @@ registerCommand({
 
         const t = active[0];
         const participants = tournamentOps.getParticipants(t.id);
+        const pendingApproval = tournamentOps.getPendingApproval(t.id);
 
-        await waClient.sendMessage(context.jid, msg.tournamentStatus(t.name, t.status, participants.length));
+        const typeName = t.type === 'single_elimination' ? 'Knockout' :
+            t.type === 'double_elimination' ? 'Double Elim' : 'League';
+
+        let statusMsg = `🏆 *${t.name}*\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `📊 Type: ${typeName}\n` +
+            `📋 Status: ${t.status}\n` +
+            `👥 Players: ${participants.length}\n` +
+            `🔄 Round: ${t.current_round}\n`;
+
+        if (pendingApproval.length > 0) {
+            statusMsg += `⏳ Pending approval: ${pendingApproval.length}\n`;
+        }
+
+        if (t.status === 'completed' && t.winner_jid) {
+            const winnerUser = userOps.get(t.winner_jid);
+            statusMsg += `🏆 Winner: ${winnerUser?.name || formatJid(t.winner_jid)}\n`;
+        }
+
+        await waClient.sendMessage(context.jid, statusMsg);
     },
 });
 
@@ -642,7 +719,7 @@ registerCommand({
 registerCommand({
     name: 'tb',
     aliases: ['tourneybracket'],
-    description: 'View bracket',
+    description: 'View tournament bracket',
     usage: '.tb',
     execute: async (args: string[], context: CommandContext) => {
         const active = tournamentOps.getActive();
@@ -652,58 +729,169 @@ registerCommand({
         }
 
         const t = active[0];
-        const matches = tournamentOps.getMatches(t.id);
-
-        if (matches.length === 0) {
-            await waClient.sendMessage(context.jid, msg.noMatchesYet());
-            return;
-        }
-
-        let roundsText = '';
-        const rounds: Record<number, any[]> = {};
-        for (const m of matches) {
-            if (!rounds[m.round_number]) rounds[m.round_number] = [];
-            rounds[m.round_number].push(m);
-        }
-
-        for (const roundNum in rounds) {
-            roundsText += `Round ${roundNum}\n`;
-            for (const m of rounds[roundNum]) {
-                const p1 = m.player1_name || formatJid(m.player1_jid);
-                const p2 = m.player2_name || formatJid(m.player2_jid);
-                roundsText += m.status === 'completed'
-                    ? `  ${p1} ${m.player1_score}-${m.player2_score} ${p2}\n`
-                    : `  ${p1} vs ${p2}\n`;
-            }
-        }
-        await waClient.sendMessage(context.jid, msg.tournamentBracket(t.name, roundsText));
+        tournamentManager.sendBracket(context.jid, t.id);
     },
 });
 
-// Tournament result
+// Tournament submit result — submits for admin approval (screenshot proof required)
 registerCommand({
     name: 'tres',
     aliases: ['tourneyresult'],
-    description: 'Report result',
-    usage: '.tres 3-1',
-    minArgs: 1,
+    description: 'Submit tournament match result (requires proof)',
+    usage: '.tres [match_id] [score]',
+    minArgs: 2,
     execute: async (args: string[], context: CommandContext) => {
-        const score = args[0];
-        const match = score.match(/(\d+)-(\d+)/);
-        if (!match) {
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+            return;
+        }
+
+        const matchId = parseInt(args[0], 10);
+        if (isNaN(matchId)) {
+            await waClient.sendMessage(context.jid,
+                `❌ Invalid match ID.\nUsage: .tres [match_id] [score]\nExample: .tres 3 2-1\nUse .tb to see match IDs.`
+            );
+            return;
+        }
+
+        const scoreStr = args[1];
+        const scoreMatch = scoreStr.match(/(\d+)[-:](\d+)/);
+        if (!scoreMatch) {
             await waClient.sendMessage(context.jid, msg.invalidScore());
             return;
         }
 
-        const myScore = parseInt(match[1], 10);
-        const oppScore = parseInt(match[2], 10);
-        await waClient.sendMessage(context.jid,
-            msg.tournamentResult(myScore, oppScore, myScore > oppScore ? context.name : 'Opponent')
-        );
+        const player1Score = parseInt(scoreMatch[1], 10);
+        const player2Score = parseInt(scoreMatch[2], 10);
+
+        // Check if message has an image (proof)
+        const hasProof = context.hasImage;
+
+        const result = tournamentManager.submitResult(matchId, player1Score, player2Score, hasProof);
+        await waClient.sendMessage(context.jid, result);
     },
 });
 
-// Tournament Help - show all tournament commands
+// Tournament pending approval — admin views queue
+registerCommand({
+    name: 'tpending',
+    aliases: ['tpend', 'tp'],
+    description: 'View matches pending approval',
+    usage: '.tpending',
+    requiredRole: ['admin'],
+    execute: async (args: string[], context: CommandContext) => {
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+            return;
+        }
+
+        const t = active[0];
+        tournamentManager.sendPendingApproval(context.jid, t.id);
+    },
+});
+
+// Tournament approve match
+registerCommand({
+    name: 'tapprove',
+    aliases: ['tok', 'tyes'],
+    description: 'Approve a tournament match result',
+    usage: '.tapprove <match_id>',
+    minArgs: 1,
+    requiredRole: ['admin'],
+    execute: async (args: string[], context: CommandContext) => {
+        const matchId = parseInt(args[0], 10);
+        if (isNaN(matchId)) {
+            await waClient.sendMessage(context.jid, msg.usage('.tapprove <match_id>'));
+            return;
+        }
+
+        const result = tournamentManager.approveMatch(matchId, context.senderJid);
+        await waClient.sendMessage(context.jid, result);
+    },
+});
+
+// Tournament reject match
+registerCommand({
+    name: 'treject',
+    aliases: ['tno', 'tdeny'],
+    description: 'Reject a tournament match result',
+    usage: '.treject <match_id> <reason>',
+    minArgs: 2,
+    requiredRole: ['admin'],
+    execute: async (args: string[], context: CommandContext) => {
+        const matchId = parseInt(args[0], 10);
+        if (isNaN(matchId)) {
+            await waClient.sendMessage(context.jid, msg.usage('.treject <match_id> <reason>'));
+            return;
+        }
+
+        const reason = args.slice(1).join(' ');
+        const result = tournamentManager.rejectMatch(matchId, context.senderJid, reason);
+        await waClient.sendMessage(context.jid, result);
+    },
+});
+
+// Tournament standings (per-tournament leaderboard)
+registerCommand({
+    name: 'tlb',
+    aliases: ['tourneystandings', 'tstandings'],
+    description: 'View tournament standings',
+    usage: '.tlb',
+    execute: async (args: string[], context: CommandContext) => {
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+            return;
+        }
+
+        const t = active[0];
+        tournamentManager.sendStandings(context.jid, t.id);
+    },
+});
+
+// Tournament advance round (admin only)
+registerCommand({
+    name: 'tnext',
+    aliases: ['tnextround', 'tnr'],
+    description: 'Advance to next round (knockout)',
+    usage: '.tnext',
+    requiredRole: ['admin'],
+    execute: async (args: string[], context: CommandContext) => {
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+            return;
+        }
+
+        const t = active[0];
+        const result = tournamentManager.advanceRound(t.id);
+        await waClient.sendMessage(context.jid, result);
+    },
+});
+
+// Tournament complete (admin only)
+registerCommand({
+    name: 'tend',
+    aliases: ['tourneyend', 'tcomplete'],
+    description: 'Complete the tournament',
+    usage: '.tend',
+    requiredRole: ['admin'],
+    execute: async (args: string[], context: CommandContext) => {
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+            return;
+        }
+
+        const t = active[0];
+        const result = tournamentManager.completeTournament(t.id);
+        await waClient.sendMessage(context.jid, result);
+    },
+});
+
+// Tournament Help
 registerCommand({
     name: 'tourneyhelp',
     aliases: ['th', 'tournamenthelp', 'tourneycmds'],
@@ -712,17 +900,30 @@ registerCommand({
     execute: async (args: string[], context: CommandContext) => {
         const text = `🏆 𝚃𝙾𝚄𝚁𝙽𝙰𝙼𝙴𝙽𝚃 𝙲𝙾𝙼𝙼𝙰𝙽𝙳𝚂 🏆\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `𝚝𝚌𝚛 — Create tournament\n` +
+            `𝚝𝚌𝚛 — Create tournament (blocks if one active)\n` +
             `  Usage: .tcr [name] [type] [max]\n` +
-            `  Types: se (single) | de (double) | rr (round robin)\n\n` +
+            `  Types:\n` +
+            `    se — Knockout (needs 4/8/16/32/64 players)\n` +
+            `    de — Double Elimination\n` +
+            `    rr / rr1 — League, 1st Leg only\n` +
+            `    rr2 — League, 1st & 2nd Leg (home & away)\n\n` +
             `𝚝𝚓 — Join active tournament\n` +
             `𝚝𝚕 — Leave tournament\n` +
+            `𝚝𝚜𝚝𝚊𝚛𝚝 — Start (generates bracket)\n` +
             `𝚝𝚜 — View tournament status\n` +
-            `𝚝𝚋 — View bracket\n` +
-            `𝚝𝚛𝚎𝚜 — Report match result\n` +
-            `  Usage: .tres 3-1\n\n` +
+            `𝚝𝚋 — View bracket with match IDs\n\n` +
+            `𝚝𝚛𝚎𝚜 — Submit match result (needs proof)\n` +
+            `  Usage: .tres [match_id] [score]\n` +
+            `  Example: .tres 3 2-1\n` +
+            `  📸 Attach screenshot with the command!\n\n` +
+            `𝚝𝚕𝚋 — View tournament standings\n` +
+            `𝚝𝚗𝚎𝚡𝚝 — Advance to next round (knockout)\n` +
+            `𝚝𝚎𝚗𝚍 — Complete the tournament\n\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `Aliases: .tc, .tourneyjoin, .tourneyleave, .tourneystatus, .tourneybracket, .tourneyresult`;
+            `𝙰𝚍𝚖𝚒𝚗 — 𝙰𝚙𝚙𝚛𝚘𝚟𝚊𝚕 𝚆𝚘𝚛𝚔𝚏𝚕𝚘𝚠\n` +
+            `𝚝𝚙𝚎𝚗𝚍𝚒𝚗𝚐 — View matches awaiting approval\n` +
+            `𝚝𝚊𝚙𝚙𝚛𝚘𝚟𝚎 <𝚒𝚍> — Approve a match result\n` +
+            `𝚝𝚛𝚎𝚓𝚎𝚌𝚝 <𝚒𝚍> <𝚛𝚎𝚊𝚜𝚘𝚗> — Reject & require replay`;
         await waClient.sendMessage(context.jid, text);
     },
 });
@@ -895,7 +1096,8 @@ registerCommand({
             player2Jid,
             player1Score,
             player2Score,
-            context.jid
+            context.jid,
+            context.hasImage
         );
 
         await waClient.sendMessage(context.jid, result);
@@ -996,6 +1198,39 @@ registerCommand({
     },
 });
 
+// PVP Help - show all PVP commands
+registerCommand({
+    name: 'pvphelp',
+    aliases: ['ph', 'pvpcmds'],
+    description: 'Show all PVP commands',
+    usage: '.pvphelp',
+    execute: async (args: string[], context: CommandContext) => {
+        const text = `⚔️ 𝙿𝚅𝙿 𝙲𝙾𝙼𝙼𝙰𝙽𝙳𝚂 (𝚍𝚊𝚒𝚕𝚢 𝚏𝚛𝚒𝚎𝚗𝚍𝚕𝚒𝚎𝚜) ⚔️\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `𝚙𝚟𝚙𝚜𝚌𝚘𝚛𝚎𝚜 — Record a match result\n` +
+            `  Usage: .pvpscores @user1 vs @user2 3:1\n` +
+            `  Shortcuts: .vs @opponent 3:1 | .me vs @opponent 2:0\n` +
+            `  ⚠️ Screenshot proof required!\n\n` +
+            `𝚙𝚟𝚙𝚕𝚋 — View PVP leaderboard\n` +
+            `  Usage: .pvplb [count]\n` +
+            `  Points: Win=3 | Draw=1 | Loss=0\n\n` +
+            `𝚙𝚟𝚙𝚜𝚝𝚊𝚝𝚜 — View player PVP profile\n` +
+            `  Usage: .pvpstats | .pvpstats @user\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `𝙰𝚍𝚖𝚒𝚗 𝙲𝚘𝚖𝚖𝚊𝚗𝚍𝚜\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `𝚙𝚟𝚙𝚊𝚙𝚙𝚛𝚘𝚟𝚎 — Approve a pending match\n` +
+            `  Usage: .pvpapprove <match_id>\n\n` +
+            `𝚙𝚟𝚙𝚛𝚎𝚓𝚎𝚌𝚝 — Reject a pending match\n` +
+            `  Usage: .pvpreject <match_id> <reason>\n\n` +
+            `𝚙𝚟𝚙𝚙𝚎𝚗𝚍𝚒𝚗𝚐 — View match approval queue\n` +
+            `  Usage: .pvppending\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Aliases: .vs, .pvp, .pvlb, .pvpp, .pvpok, .pvpno, .pvpq`;
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
 // ==================== GENERAL COMMANDS ====================
 
 // Help
@@ -1017,13 +1252,16 @@ registerCommand({
             `  .warn  .mute  .unmute  .kick\n` +
             `  .promote  .demote  .setadmin\n` +
             `  .tagall  .tagadmin\n\n` +
-            `𝚃𝚘𝚞𝚛𝚗𝚊𝚖𝚎𝚗𝚝\n` +
-            `  .tcr  .tj  .tl  .ts  .tb  .tres\n\n` +
-            `𝚂𝚝𝚊𝚝𝚜\n` +
-            `  .lb  .profile\n\n` +
-            `𝙿𝚅𝙿\n` +
+            `𝚃𝚘𝚞𝚛𝚗𝚊𝚖𝚎𝚗𝚝 (competition with brackets)\n` +
+            `  .tcr  .tj  .tl  .tstart  .ts\n` +
+            `  .tb  .tres  .tlb  .tnext  .tend\n` +
+            `  .tpending  .tapprove  .treject\n\n` +
+            `𝙿𝚅𝙿 (daily friendlies)\n` +
             `  .pvpscores  .pvplb  .pvpstats\n` +
-            `  .pvpapprove  .pvpreject  .pvppending`;
+            `  .pvpapprove  .pvpreject  .pvppending\n\n` +
+            `𝙶𝚎𝚗𝚎𝚛𝚊𝚕\n` +
+            `  .lb  .profile  .help\n` +
+            `  .pvphelp  .tourneyhelp  .mutehelp`;
 
         await waClient.sendMessage(context.jid, msg.helpGeneral(categories));
     },
