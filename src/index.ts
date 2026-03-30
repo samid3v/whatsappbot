@@ -5,9 +5,14 @@ import { muteManager } from './services/mute-manager';
 import { warnManager } from './services/warn-manager';
 import { roleManager } from './services/role-manager';
 import { statsOps } from './database/db';
+import { startHealthServer } from './health';
+
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 console.log('⚽ Starting eFootball WhatsApp Bot...');
 console.log('='.repeat(40));
+
+startHealthServer(PORT);
 
 async function main() {
     try {
