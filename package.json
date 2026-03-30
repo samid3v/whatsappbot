@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "node --import tsx src/index.ts"
+    "dev": "node --import tsx src/index.ts",
+    "render-build": "pnpm install && pnpm run build",
+    "render-start": "pnpm start"
   },
   "keywords": [
     "whatsapp",
@@ -26,6 +28,7 @@
       "sharp"
     ]
   },
+  "packageManager": "pnpm",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^12.8.0",
