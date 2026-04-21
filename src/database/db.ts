@@ -354,6 +354,18 @@ const stmts = {
   incrementPvpDraw: db.prepare('UPDATE pvp_stats SET draws = draws + 1 WHERE user_jid = ?'),
   incrementPvpLoss: db.prepare('UPDATE pvp_stats SET losses = losses + 1 WHERE user_jid = ?'),
   getPvpLeaderboard: db.prepare('SELECT * FROM pvp_stats ORDER BY points DESC LIMIT ?'),
+  getSeasonStatsSum: db.prepare(`
+    SELECT 
+      SUM(points) as total_points,
+      SUM(wins) as total_wins,
+      SUM(draws) as total_draws,
+      SUM(losses) as total_losses,
+      SUM(goals_for) as total_goals_for,
+      SUM(goals_against) as total_goals_against,
+      SUM(matches_played) as total_matches_played
+    FROM pvp_season_stats
+    WHERE user_jid = ?
+  `),
 
   // PVP Seasons
   createSeason: db.prepare('INSERT INTO pvp_seasons (season_number, start_date, status) VALUES (?, ?, ?)'),
@@ -775,34 +787,24 @@ export const pvpStatsOps = {
 
   // Get all-time stats (sum of all seasons + current)
   getAllTimeStats: (userJid: string): any => {
-    const currentStats = stmts.findPvpStats.get(userJid) as any;
-    
-    // Get sum of all season stats
-    const seasonStatsQuery = db.prepare(`
-      SELECT 
-        SUM(points) as total_points,
-        SUM(wins) as total_wins,
-        SUM(draws) as total_draws,
-        SUM(losses) as total_losses,
-        SUM(goals_for) as total_goals_for,
-        SUM(goals_against) as total_goals_against,
-        SUM(matches_played) as total_matches_played
-      FROM pvp_season_stats
-      WHERE user_jid = ?
-    `);
-    
-    const seasonStats = seasonStatsQuery.get(userJid) as any;
+    try {
+      const currentStats = stmts.findPvpStats.get(userJid) as any;
+      const seasonStats = stmts.getSeasonStatsSum.get(userJid) as any;
 
-    // Combine current season + all past seasons
-    return {
-      points: (currentStats?.points || 0) + (seasonStats?.total_points || 0),
-      wins: (currentStats?.wins || 0) + (seasonStats?.total_wins || 0),
-      draws: (currentStats?.draws || 0) + (seasonStats?.total_draws || 0),
-      losses: (currentStats?.losses || 0) + (seasonStats?.total_losses || 0),
-      goals_for: (currentStats?.goals_for || 0) + (seasonStats?.total_goals_for || 0),
-      goals_against: (currentStats?.goals_against || 0) + (seasonStats?.total_goals_against || 0),
-      matches_played: (currentStats?.matches_played || 0) + (seasonStats?.total_matches_played || 0),
-    };
+      // Combine current season + all past seasons
+      return {
+        points: (currentStats?.points || 0) + (seasonStats?.total_points || 0),
+        wins: (currentStats?.wins || 0) + (seasonStats?.total_wins || 0),
+        draws: (currentStats?.draws || 0) + (seasonStats?.total_draws || 0),
+        losses: (currentStats?.losses || 0) + (seasonStats?.total_losses || 0),
+        goals_for: (currentStats?.goals_for || 0) + (seasonStats?.total_goals_for || 0),
+        goals_against: (currentStats?.goals_against || 0) + (seasonStats?.total_goals_against || 0),
+        matches_played: (currentStats?.matches_played || 0) + (seasonStats?.total_matches_played || 0),
+      };
+    } catch (error) {
+      console.error('Error getting all-time stats:', error);
+      return null;
+    }
   },
 
   applyMatchStats: (player1Jid: string, player2Jid: string, player1Score: number, player2Score: number): void => {
