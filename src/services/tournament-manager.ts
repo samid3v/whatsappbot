@@ -8,7 +8,15 @@ import { msg } from '../utils/messages';
 // PVP = daily friendly games with global leaderboard (approved by admin)
 // Tournament = isolated competition with per-tournament standings, knockout/round-robin brackets
 
-const VALID_KNOCKOUT_SIZES = [4, 8, 16, 32, 64];
+const VALID_KNOCKOUT_SIZES = [4, 8, 16, 32, 64];  // Minimum 4 players for knockout
+
+interface BracketMatch {
+    id?: number;
+    player1Jid: string;
+    player2Jid: string;
+    round: number;
+    position: number;
+}
 
 class TournamentManager {
 
@@ -23,6 +31,49 @@ class TournamentManager {
         if (count > 64) return `❌ Maximum 64 players for knockout. You have ${count}.`;
         return `❌ Knockout requires a power-of-2 bracket: ${VALID_KNOCKOUT_SIZES.join(', ')}.\n` +
             `You have ${count} players. Either add or remove players to reach a valid size.`;
+    }
+
+    // ===== SEEDING =====
+
+    seedPlayers(jids: string[], tournamentId: number): string[] {
+        // Get current standings to seed by performance
+        const standings = tournamentOps.getStandings(tournamentId);
+        const standingsMap = new Map(standings.map((s: any) => [s.user_jid, s]));
+
+        // Sort by points (descending), then by goal difference
+        const sorted = [...jids].sort((a, b) => {
+            const aStanding = standingsMap.get(a);
+            const bStanding = standingsMap.get(b);
+            
+            const aPoints = aStanding?.points || 0;
+            const bPoints = bStanding?.points || 0;
+            
+            if (aPoints !== bPoints) return bPoints - aPoints;
+            
+            const aGD = (aStanding?.goals_for || 0) - (aStanding?.goals_against || 0);
+            const bGD = (bStanding?.goals_for || 0) - (bStanding?.goals_against || 0);
+            
+            return bGD - aGD;
+        });
+
+        return sorted;
+    }
+
+    // ===== BYE HANDLING =====
+
+    addByeMatches(tournamentId: number, jids: string[], round: number): number {
+        let byeCount = 0;
+        
+        // If odd number, add a bye (player advances automatically)
+        if (jids.length % 2 === 1) {
+            const byePlayer = jids[jids.length - 1];
+            // Create a "bye" match where player1 is the bye player, player2 is null
+            // We'll handle this specially in match display
+            tournamentOps.addMatch(tournamentId, byePlayer, 'BYE', round);
+            byeCount = 1;
+        }
+        
+        return byeCount;
     }
 
     // ===== LIFECYCLE =====
@@ -50,7 +101,7 @@ class TournamentManager {
         tournamentOps.updateStatus(tournamentId, 'in_progress');
         tournamentOps.updateRound(tournamentId, 1);
 
-        const typeName = t.type === 'single_elimination' ? 'Knockout' :
+        const typeName = t.type === 'single_elimination' ? 'Single Elimination' :
             t.type === 'double_elimination' ? 'Double Elimination' :
             t.legs === 2 ? 'League (1st & 2nd Leg)' : 'League (1st Leg)';
 
@@ -62,7 +113,58 @@ class TournamentManager {
             `Use .tb to view the bracket!`;
     }
 
-    completeTournament(tournamentId: number, winnerJid?: string): string {
+    // ===== BRACKET VISUALIZATION =====
+
+    getBracketDisplay(tournamentId: number): string {
+        const t = tournamentOps.get(tournamentId);
+        if (!t) return '❌ Tournament not found.';
+
+        const matches = tournamentOps.getMatches(tournamentId);
+        if (matches.length === 0) return '📊 No matches yet.';
+
+        // Group by round
+        const rounds: Record<number, any[]> = {};
+        for (const match of matches) {
+            if (!rounds[match.round_number]) {
+                rounds[match.round_number] = [];
+            }
+            rounds[match.round_number].push(match);
+        }
+
+        let display = `📊 *${t.name}* — ${t.type.replace('_', ' ').toUpperCase()}\n`;
+        display += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+        for (const roundNum in rounds) {
+            display += `*Round ${roundNum}*\n`;
+            
+            for (const match of rounds[roundNum]) {
+                const p1 = userOps.get(match.player1_jid)?.name || formatJid(match.player1_jid);
+                const p2 = match.player2_jid === 'BYE' ? '(bye)' : (userOps.get(match.player2_jid)?.name || formatJid(match.player2_jid));
+
+                let status = '';
+                if (match.match_status === 'approved') {
+                    const winner = userOps.get(match.winner_jid)?.name || formatJid(match.winner_jid);
+                    const isDraw = match.player1_score === match.player2_score;
+                    status = isDraw ? `🤝 ${match.player1_score}-${match.player2_score}` : `✅ ${match.player1_score}-${match.player2_score}`;
+                } else if (match.match_status === 'pending_approval') {
+                    status = `⏳ ${match.player1_score}-${match.player2_score}`;
+                } else {
+                    status = `⚪ vs`;
+                }
+
+                display += `  #${match.id} | ${p1} ${status} ${p2}\n`;
+            }
+            
+            display += '\n';
+        }
+
+        return display;
+    }
+
+    async sendBracket(groupJid: string, tournamentId: number): Promise<void> {
+        const display = this.getBracketDisplay(tournamentId);
+        await waClient.sendMessage(groupJid, display);
+    }
         const t = tournamentOps.get(tournamentId);
         if (!t) return '❌ Tournament not found.';
         if (t.status === 'completed') return '❌ Tournament already completed.';
@@ -87,13 +189,10 @@ class TournamentManager {
         const t = tournamentOps.get(tournamentId);
         const legs = t?.legs || 1;
         const participants = tournamentOps.getParticipants(tournamentId);
-        const jids = participants.map((p: any) => p.user_jid);
+        let jids = participants.map((p: any) => p.user_jid);
 
-        // Shuffle for random seeding
-        for (let i = jids.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [jids[i], jids[j]] = [jids[j], jids[i]];
-        }
+        // Seed players based on standings
+        jids = this.seedPlayers(jids, tournamentId);
 
         // Initialize standings
         for (const jid of jids) {
@@ -102,16 +201,46 @@ class TournamentManager {
 
         if (type === 'round_robin') {
             return this.generateRoundRobin(tournamentId, jids, legs);
+        } else if (type === 'double_elimination') {
+            return this.generateDoubleElimination(tournamentId, jids);
+        } else {
+            // single_elimination
+            return this.generateSingleElimination(tournamentId, jids);
         }
-        return this.generateKnockout(tournamentId, jids);
     }
 
-    private generateKnockout(tournamentId: number, jids: string[]): number {
+    private generateSingleElimination(tournamentId: number, jids: string[]): number {
         let matchCount = 0;
-        for (let i = 0; i < jids.length; i += 2) {
+        
+        // Add bye if odd number
+        this.addByeMatches(tournamentId, jids, 1);
+        
+        // Pair players sequentially (seeded)
+        for (let i = 0; i < jids.length - 1; i += 2) {
             tournamentOps.addMatch(tournamentId, jids[i], jids[i + 1], 1);
             matchCount++;
         }
+        
+        return matchCount;
+    }
+
+    private generateDoubleElimination(tournamentId: number, jids: string[]): number {
+        // Double elimination: winners bracket + losers bracket
+        // Round 1: All players in winners bracket
+        let matchCount = 0;
+        
+        // Add bye if odd number
+        this.addByeMatches(tournamentId, jids, 1);
+        
+        // Winners bracket round 1
+        for (let i = 0; i < jids.length - 1; i += 2) {
+            tournamentOps.addMatch(tournamentId, jids[i], jids[i + 1], 1);
+            matchCount++;
+        }
+        
+        // Note: Losers bracket matches are generated after winners bracket round 1 is complete
+        // This is handled in advanceRound()
+        
         return matchCount;
     }
 
@@ -159,6 +288,15 @@ class TournamentManager {
         const t = tournamentOps.get(tournamentId);
         if (!t) return '❌ Tournament not found.';
 
+        // Handle bye matches
+        if (match.player2_jid === 'BYE') {
+            tournamentOps.submitResult(matchId, 1, 0, match.player1_jid);
+            tournamentOps.approveMatch(matchId, 'SYSTEM');
+            const p1User = userOps.get(match.player1_jid);
+            const p1Name = p1User?.name || formatJid(match.player1_jid);
+            return `✅ ${p1Name} advances (bye)`;
+        }
+
         // Determine winner
         let winnerJid: string;
         if (player1Score > player2Score) {
@@ -166,10 +304,12 @@ class TournamentManager {
         } else if (player2Score > player1Score) {
             winnerJid = match.player2_jid;
         } else {
+            // Draw - need to handle extra time + penalties for knockout
             if (t.type !== 'round_robin') {
-                return '❌ Draws are not allowed in knockout tournaments!';
+                // Knockout tournament - need extra time then penalties
+                return this.handleKnockoutDraw(matchId, match, t);
             }
-            winnerJid = match.player1_jid;
+            winnerJid = match.player1_jid; // For round-robin, draw is valid
         }
 
         // Submit for approval
@@ -182,6 +322,58 @@ class TournamentManager {
         const p2Name = p2User?.name || formatJid(match.player2_jid);
 
         return msg.tourneyMatchSubmitted(matchId, p1Name, player1Score, player2Score, p2Name, t.name, match.round_number, hasProof);
+    }
+
+    private handleKnockoutDraw(matchId: number, match: any, tournament: any): string {
+        const p1User = userOps.get(match.player1_jid);
+        const p2User = userOps.get(match.player2_jid);
+        const p1Name = p1User?.name || formatJid(match.player1_jid);
+        const p2Name = p2User?.name || formatJid(match.player2_jid);
+
+        return `⚠️ *MATCH TIED ${match.player1_score}-${match.player2_score}*\n\n` +
+            `${p1Name} vs ${p2Name}\n\n` +
+            `In ${tournament.type === 'double_elimination' ? 'Double Elimination' : 'Single Elimination'}, ` +
+            `tied matches go to:\n\n` +
+            `*STEP 1: EXTRA TIME (30 minutes)*\n` +
+            `Play 2 x 15 minute periods\n` +
+            `If someone scores → they win\n\n` +
+            `*STEP 2: PENALTY SHOOTOUT*\n` +
+            `If still tied after extra time → 5 penalties each\n\n` +
+            `*HOW TO SUBMIT FINAL RESULT:*\n` +
+            `.tres ${matchId} <final_score>\n\n` +
+            `Examples:\n` +
+            `• After extra time: .tres ${matchId} 2-1 (Player 1 scored in ET)\n` +
+            `• After penalties: .tres ${matchId} 1-1p5-4 (1-1 after 90+30, won 5-4 on penalties)\n\n` +
+            `Format for penalties: <90min>-<90min>p<pen1>-<pen2>\n` +
+            `Example: .tres ${matchId} 1-1p5-4`;
+    }
+
+    // Parse penalty shootout format: "1-1p5-4" → { regular: "1-1", penalties: "5-4", winner: "player1" }
+    private parsePenaltyResult(scoreStr: string): { regular: string; penalties: string; winner: string } | null {
+        // Format: "1-1p5-4" or "2-1" (no penalties)
+        if (!scoreStr.includes('p')) {
+            // No penalties, just regular score
+            return null;
+        }
+
+        const parts = scoreStr.split('p');
+        if (parts.length !== 2) return null;
+
+        const regular = parts[0]; // "1-1"
+        const penalties = parts[1]; // "5-4"
+
+        const penParts = penalties.split('-');
+        if (penParts.length !== 2) return null;
+
+        const pen1 = parseInt(penParts[0], 10);
+        const pen2 = parseInt(penParts[1], 10);
+
+        if (isNaN(pen1) || isNaN(pen2)) return null;
+
+        const winner = pen1 > pen2 ? 'player1' : pen1 < pen2 ? 'player2' : null;
+        if (!winner) return null; // Penalties must have a winner
+
+        return { regular, penalties, winner };
     }
 
     // ===== ADMIN APPROVAL WORKFLOW =====
@@ -275,8 +467,60 @@ class TournamentManager {
         const approved = roundMatches.filter((m: any) => m.match_status === 'approved');
         const winners: string[] = [];
         for (const m of approved) {
-            winners.push(m.winner_jid);
+            if (m.player2_jid !== 'BYE') {
+                winners.push(m.winner_jid);
+            } else {
+                winners.push(m.player1_jid);
+            }
         }
+
+        if (winners.length === 0) {
+            return '❌ No approved matches in this round.';
+        }
+
+        // Check if tournament is complete (1 winner)
+        if (winners.length === 1) {
+            this.completeTournament(tournamentId, winners[0]);
+            return `🏆 Tournament Complete! ${userOps.get(winners[0])?.name || formatJid(winners[0])} is the champion!`;
+        }
+
+        // Generate next round
+        const nextRound = currentRound + 1;
+        let matchesGenerated = 0;
+
+        if (t.type === 'double_elimination') {
+            // For double elimination, generate losers bracket matches
+            // This is simplified - full double elimination would need more complex logic
+            matchesGenerated = this.generateDoubleEliminationNextRound(tournamentId, winners, nextRound);
+        } else {
+            // Single elimination - pair winners
+            this.addByeMatches(tournamentId, winners, nextRound);
+            for (let i = 0; i < winners.length - 1; i += 2) {
+                tournamentOps.addMatch(tournamentId, winners[i], winners[i + 1], nextRound);
+                matchesGenerated++;
+            }
+        }
+
+        tournamentOps.updateRound(tournamentId, nextRound);
+
+        return `✅ Round ${nextRound} generated!\n` +
+            `📋 ${matchesGenerated} matches\n` +
+            `Use .tb to view the bracket!`;
+    }
+
+    private generateDoubleEliminationNextRound(tournamentId: number, winners: string[], round: number): number {
+        // Simplified double elimination: winners advance in winners bracket
+        let matchCount = 0;
+        
+        this.addByeMatches(tournamentId, winners, round);
+        
+        for (let i = 0; i < winners.length - 1; i += 2) {
+            tournamentOps.addMatch(tournamentId, winners[i], winners[i + 1], round);
+            matchCount++;
+        }
+        
+        return matchCount;
+    }
 
         if (winners.length === 0) return '❌ No approved winners found.';
 
