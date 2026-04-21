@@ -5,6 +5,7 @@ import { muteManager } from './services/mute-manager';
 import { warnManager } from './services/warn-manager';
 import { roleManager } from './services/role-manager';
 import { statsOps } from './database/db';
+import { seasonManager } from './services/season-manager';
 import { startHealthServer } from './health';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -23,6 +24,10 @@ async function main() {
         // Initialize message handler
         console.log('🔧 Initializing message handler...');
         await messageHandler.initialize();
+
+        // Start season manager for weekly resets
+        console.log('📊 Starting season manager...');
+        seasonManager.startWeeklyReset();
 
         // Schedule tasks
         console.log('⏰ Setting up scheduled tasks...');
@@ -55,6 +60,12 @@ async function main() {
         console.log('  !setadmin @user - Set as admin');
         console.log('');
         console.log('Link detection is enabled - 3 warnings = 2hr mute');
+        console.log('');
+        console.log('🔄 PVP SEASON SYSTEM (AUTOMATED):');
+        console.log('   • Runs: Monday 00:00 → Sunday 23:59 UTC');
+        console.log('   • Resets automatically every Sunday at 00:00');
+        console.log('   • No manual trigger needed');
+        console.log('   • Past seasons archived for history');
         console.log('='.repeat(40));
 
     } catch (error) {
@@ -66,11 +77,13 @@ async function main() {
 // Handle shutdown
 process.on('SIGINT', async () => {
     console.log('\n👋 Shutting down bot...');
+    seasonManager.stopWeeklyReset();
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     console.log('\n👋 Shutting down bot...');
+    seasonManager.stopWeeklyReset();
     process.exit(0);
 });
 

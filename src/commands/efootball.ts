@@ -1,11 +1,12 @@
 import { CommandContext, UserRole } from '../types';
 import { waClient } from '../client';
 import { statsManager } from '../services/stats-manager';
-import { tournamentOps } from '../database/db';
+import { tournamentOps, seasonOps } from '../database/db';
 import { userOps } from '../database/db';
 import { formatJid } from '../utils/helpers';
 import config from '../utils/config';
 import { pvpManager } from '../services/pvp-manager';
+import { seasonManager } from '../services/season-manager';
 
 // ==================== STATS COMMANDS ====================
 
@@ -350,6 +351,110 @@ export const pvpCommands = {
             }
 
             await pvpManager.sendProfile(context.jid, targetJid);
+        },
+    },
+
+    // Clear all PVP records (admin only)
+    pvpclear: {
+        name: 'pvpclear',
+        aliases: ['clearpvp'],
+        description: 'Clear all PVP records (admin only)',
+        usage: '.pvpclear confirm',
+        minArgs: 1,
+        requiredRole: ['admin'],
+        execute: async (args: string[], context: CommandContext) => {
+            if (args[0]?.toLowerCase() !== 'confirm') {
+                await waClient.sendMessage(context.jid,
+                    `⚠️ This will delete ALL PVP records!\n\n` +
+                    `To confirm, use: .pvpclear confirm\n\n` +
+                    `This action cannot be undone.`
+                );
+                return;
+            }
+
+            try {
+                seasonOps.clearAllPvpRecords();
+                await waClient.sendMessage(context.jid,
+                    `✅ All PVP records cleared!\n\n` +
+                    `• All matches deleted\n` +
+                    `• All stats deleted\n` +
+                    `• All seasons deleted\n\n` +
+                    `Use .pvpreset to reinitialize the system.`
+                );
+            } catch (error) {
+                await waClient.sendMessage(context.jid, `❌ Error clearing PVP records: ${error}`);
+            }
+        },
+    },
+
+    // Reinitialize PVP system (admin only)
+    pvpreset: {
+        name: 'pvpreset',
+        aliases: ['resetpvp'],
+        description: 'Reinitialize PVP system (admin only)',
+        usage: '.pvpreset confirm',
+        minArgs: 1,
+        requiredRole: ['admin'],
+        execute: async (args: string[], context: CommandContext) => {
+            if (args[0]?.toLowerCase() !== 'confirm') {
+                await waClient.sendMessage(context.jid,
+                    `⚠️ This will reinitialize the PVP system!\n\n` +
+                    `To confirm, use: .pvpreset confirm\n\n` +
+                    `This will:\n` +
+                    `• Clear all PVP records\n` +
+                    `• Create Season 1\n` +
+                    `• Reset all stats`
+                );
+                return;
+            }
+
+            try {
+                const season = seasonOps.reinitializePvp();
+                await waClient.sendMessage(context.jid,
+                    `✅ PVP system reinitialized!\n\n` +
+                    `📊 Season ${season.season_number} created\n` +
+                    `🔄 All stats reset\n` +
+                    `✅ Ready to go!`
+                );
+            } catch (error) {
+                await waClient.sendMessage(context.jid, `❌ Error reinitializing PVP: ${error}`);
+            }
+        },
+    },
+
+    // Manually trigger week reset (admin only)
+    pvpweek: {
+        name: 'pvpweek',
+        aliases: ['weekreset', 'newweek'],
+        description: 'Manually trigger week reset (admin only)',
+        usage: '.pvpweek confirm',
+        minArgs: 1,
+        requiredRole: ['admin'],
+        execute: async (args: string[], context: CommandContext) => {
+            if (args[0]?.toLowerCase() !== 'confirm') {
+                await waClient.sendMessage(context.jid,
+                    `⚠️ This will manually trigger the weekly reset!\n\n` +
+                    `To confirm, use: .pvpweek confirm\n\n` +
+                    `This will:\n` +
+                    `• Close current season\n` +
+                    `• Create new season\n` +
+                    `• Reset all stats`
+                );
+                return;
+            }
+
+            try {
+                await seasonManager.resetSeason();
+                const season = seasonOps.getCurrentSeason();
+                await waClient.sendMessage(context.jid,
+                    `✅ Weekly reset completed!\n\n` +
+                    `📊 Season ${season.season_number} is now active\n` +
+                    `🔄 All stats reset\n` +
+                    `📅 New week started (Monday-Sunday)`
+                );
+            } catch (error) {
+                await waClient.sendMessage(context.jid, `❌ Error triggering week reset: ${error}`);
+            }
         },
     },
 };

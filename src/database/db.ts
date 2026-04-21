@@ -161,6 +161,35 @@ db.exec(`
     matches_played INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS pvp_seasons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_number INTEGER NOT NULL UNIQUE,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS pvp_season_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id INTEGER NOT NULL,
+    user_jid TEXT NOT NULL,
+    points INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    draws INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    goals_for INTEGER NOT NULL DEFAULT 0,
+    goals_against INTEGER NOT NULL DEFAULT 0,
+    matches_played INTEGER NOT NULL DEFAULT 0,
+    position INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (season_id) REFERENCES pvp_seasons(id),
+    UNIQUE(season_id, user_jid)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pvp_season_stats_season ON pvp_season_stats(season_id);
+  CREATE INDEX IF NOT EXISTS idx_pvp_season_stats_points ON pvp_season_stats(season_id, points DESC);
 `);
 
 // Migrate existing pvp_matches tables (add columns if missing)
@@ -180,6 +209,50 @@ try { db.exec("ALTER TABLE tournament_matches ADD COLUMN match_status TEXT NOT N
 try { db.exec("ALTER TABLE tournament_matches ADD COLUMN proof TEXT"); } catch {}
 try { db.exec("ALTER TABLE tournament_matches ADD COLUMN approved_by TEXT"); } catch {}
 try { db.exec("ALTER TABLE tournament_matches ADD COLUMN rejection_reason TEXT"); } catch {}
+
+// Run migrations for season tables
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pvp_seasons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_number INTEGER NOT NULL UNIQUE,
+      start_date TEXT NOT NULL,
+      end_date TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS pvp_season_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id INTEGER NOT NULL,
+      user_jid TEXT NOT NULL,
+      points INTEGER NOT NULL DEFAULT 0,
+      wins INTEGER NOT NULL DEFAULT 0,
+      draws INTEGER NOT NULL DEFAULT 0,
+      losses INTEGER NOT NULL DEFAULT 0,
+      goals_for INTEGER NOT NULL DEFAULT 0,
+      goals_against INTEGER NOT NULL DEFAULT 0,
+      matches_played INTEGER NOT NULL DEFAULT 0,
+      position INTEGER,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (season_id) REFERENCES pvp_seasons(id),
+      UNIQUE(season_id, user_jid)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pvp_season_stats_season ON pvp_season_stats(season_id);
+    CREATE INDEX IF NOT EXISTS idx_pvp_season_stats_points ON pvp_season_stats(season_id, points DESC);
+  `);
+
+  // Ensure season 1 exists
+  const checkSeason = db.prepare('SELECT COUNT(*) as count FROM pvp_seasons');
+  const result = checkSeason.get() as any;
+  if (result.count === 0) {
+    const insertSeason = db.prepare('INSERT INTO pvp_seasons (season_number, start_date, status) VALUES (?, ?, ?)');
+    insertSeason.run(1, new Date().toISOString(), 'active');
+  }
+} catch (e) {
+  console.log('Season tables already exist or migration skipped');
+}
 
 // ==================== PREPARED STATEMENTS ====================
 
@@ -281,6 +354,35 @@ const stmts = {
   incrementPvpDraw: db.prepare('UPDATE pvp_stats SET draws = draws + 1 WHERE user_jid = ?'),
   incrementPvpLoss: db.prepare('UPDATE pvp_stats SET losses = losses + 1 WHERE user_jid = ?'),
   getPvpLeaderboard: db.prepare('SELECT * FROM pvp_stats ORDER BY points DESC LIMIT ?'),
+
+  // PVP Seasons
+  createSeason: db.prepare('INSERT INTO pvp_seasons (season_number, start_date, status) VALUES (?, ?, ?)'),
+  getCurrentSeason: db.prepare("SELECT * FROM pvp_seasons WHERE status = 'active' ORDER BY season_number DESC LIMIT 1"),
+  getSeasonById: db.prepare('SELECT * FROM pvp_seasons WHERE id = ?'),
+  closeSeason: db.prepare("UPDATE pvp_seasons SET status = 'closed', end_date = datetime('now') WHERE id = ?"),
+  getAllSeasons: db.prepare('SELECT * FROM pvp_seasons ORDER BY season_number DESC'),
+
+  // PVP Season Stats
+  findSeasonStats: db.prepare('SELECT * FROM pvp_season_stats WHERE season_id = ? AND user_jid = ?'),
+  insertSeasonStats: db.prepare(`INSERT INTO pvp_season_stats (season_id, user_jid, points, wins, draws, losses, goals_for, goals_against, matches_played)
+    VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0)`),
+  updateSeasonStats: db.prepare(`UPDATE pvp_season_stats SET goals_for = goals_for + ?, goals_against = goals_against + ?,
+    points = points + ?, wins = wins + ?, draws = draws + ?, losses = losses + ?, matches_played = matches_played + 1, updated_at = datetime('now')
+    WHERE season_id = ? AND user_jid = ?`),
+  getSeasonLeaderboard: db.prepare('SELECT * FROM pvp_season_stats WHERE season_id = ? ORDER BY points DESC, (goals_for - goals_against) DESC LIMIT ?'),
+  getSeasonStats: db.prepare('SELECT * FROM pvp_season_stats WHERE season_id = ? AND user_jid = ?'),
+  updateSeasonPositions: db.prepare('UPDATE pvp_season_stats SET position = ? WHERE id = ?'),
+  archiveCurrentStats: db.prepare(`
+    INSERT INTO pvp_season_stats (season_id, user_jid, points, wins, draws, losses, goals_for, goals_against, matches_played)
+    SELECT ?, user_jid, points, wins, draws, losses, goals_for, goals_against, matches_played FROM pvp_stats
+  `),
+  resetCurrentStats: db.prepare('UPDATE pvp_stats SET points = 0, wins = 0, draws = 0, losses = 0, goals_for = 0, goals_against = 0, matches_played = 0'),
+
+  // PVP Clear operations
+  clearAllPvpMatches: db.prepare('DELETE FROM pvp_matches'),
+  clearAllPvpStats: db.prepare('DELETE FROM pvp_stats'),
+  clearAllPvpSeasonStats: db.prepare('DELETE FROM pvp_season_stats'),
+  clearAllPvpSeasons: db.prepare('DELETE FROM pvp_seasons'),
 };
 
 // ==================== HELPER FUNCTIONS ====================
@@ -663,17 +765,6 @@ export const pvpStatsOps = {
     return stats;
   },
 
-  updateAfterMatch: (userJid: string, goalsFor: number, goalsAgainst: number, result: 'win' | 'draw' | 'loss', points: number): void => {
-    stmts.updatePvpStats.run(goalsFor, goalsAgainst, points, userJid);
-    if (result === 'win') {
-      stmts.incrementPvpWin.run(userJid);
-    } else if (result === 'draw') {
-      stmts.incrementPvpDraw.run(userJid);
-    } else {
-      stmts.incrementPvpLoss.run(userJid);
-    }
-  },
-
   getLeaderboard: (limit: number = 10): any[] => {
     return stmts.getPvpLeaderboard.all(limit);
   },
@@ -682,24 +773,205 @@ export const pvpStatsOps = {
     return stmts.findPvpStats.get(userJid) || null;
   },
 
+  // Get all-time stats (sum of all seasons + current)
+  getAllTimeStats: (userJid: string): any => {
+    const currentStats = stmts.findPvpStats.get(userJid) as any;
+    
+    // Get sum of all season stats
+    const seasonStatsQuery = db.prepare(`
+      SELECT 
+        SUM(points) as total_points,
+        SUM(wins) as total_wins,
+        SUM(draws) as total_draws,
+        SUM(losses) as total_losses,
+        SUM(goals_for) as total_goals_for,
+        SUM(goals_against) as total_goals_against,
+        SUM(matches_played) as total_matches_played
+      FROM pvp_season_stats
+      WHERE user_jid = ?
+    `);
+    
+    const seasonStats = seasonStatsQuery.get(userJid) as any;
+
+    // Combine current season + all past seasons
+    return {
+      points: (currentStats?.points || 0) + (seasonStats?.total_points || 0),
+      wins: (currentStats?.wins || 0) + (seasonStats?.total_wins || 0),
+      draws: (currentStats?.draws || 0) + (seasonStats?.total_draws || 0),
+      losses: (currentStats?.losses || 0) + (seasonStats?.total_losses || 0),
+      goals_for: (currentStats?.goals_for || 0) + (seasonStats?.total_goals_for || 0),
+      goals_against: (currentStats?.goals_against || 0) + (seasonStats?.total_goals_against || 0),
+      matches_played: (currentStats?.matches_played || 0) + (seasonStats?.total_matches_played || 0),
+    };
+  },
+
   applyMatchStats: (player1Jid: string, player2Jid: string, player1Score: number, player2Score: number): void => {
+    // Ensure both players exist
     pvpStatsOps.getOrCreate(player1Jid);
     pvpStatsOps.getOrCreate(player2Jid);
 
+    // Determine results
     let result1: 'win' | 'draw' | 'loss';
     let result2: 'win' | 'draw' | 'loss';
     let points1: number;
     let points2: number;
+    let wins1: number, draws1: number, losses1: number;
+    let wins2: number, draws2: number, losses2: number;
 
     if (player1Score > player2Score) {
-      result1 = 'win'; result2 = 'loss'; points1 = 3; points2 = 0;
+      result1 = 'win'; result2 = 'loss';
+      points1 = 3; points2 = 0;
+      wins1 = 1; draws1 = 0; losses1 = 0;
+      wins2 = 0; draws2 = 0; losses2 = 1;
     } else if (player1Score < player2Score) {
-      result1 = 'loss'; result2 = 'win'; points1 = 0; points2 = 3;
+      result1 = 'loss'; result2 = 'win';
+      points1 = 0; points2 = 3;
+      wins1 = 0; draws1 = 0; losses1 = 1;
+      wins2 = 1; draws2 = 0; losses2 = 0;
     } else {
-      result1 = 'draw'; result2 = 'draw'; points1 = 1; points2 = 1;
+      result1 = 'draw'; result2 = 'draw';
+      points1 = 1; points2 = 1;
+      wins1 = 0; draws1 = 1; losses1 = 0;
+      wins2 = 0; draws2 = 1; losses2 = 0;
     }
 
-    pvpStatsOps.updateAfterMatch(player1Jid, player1Score, player2Score, result1, points1);
-    pvpStatsOps.updateAfterMatch(player2Jid, player2Score, player1Score, result2, points2);
+    // Get current active season
+    const seasonId = seasonOps.getCurrentSeasonId();
+
+    // Use transaction for atomic updates
+    const updatePlayer1 = db.transaction(() => {
+      stmts.updateSeasonStats.run(
+        player1Score, player2Score, points1, wins1, draws1, losses1,
+        seasonId, player1Jid
+      );
+    });
+
+    const updatePlayer2 = db.transaction(() => {
+      stmts.updateSeasonStats.run(
+        player2Score, player1Score, points2, wins2, draws2, losses2,
+        seasonId, player2Jid
+      );
+    });
+
+    // Update season stats (current active season)
+    try {
+      updatePlayer1();
+      updatePlayer2();
+    } catch (e) {
+      console.error('Error updating season stats:', e);
+    }
+
+    // Update global stats (for all-time leaderboard)
+    const updateGlobalPlayer1 = db.transaction(() => {
+      stmts.updatePvpStats.run(player1Score, player2Score, points1, player1Jid);
+      if (wins1) stmts.incrementPvpWin.run(player1Jid);
+      if (draws1) stmts.incrementPvpDraw.run(player1Jid);
+      if (losses1) stmts.incrementPvpLoss.run(player1Jid);
+    });
+
+    const updateGlobalPlayer2 = db.transaction(() => {
+      stmts.updatePvpStats.run(player2Score, player1Score, points2, player2Jid);
+      if (wins2) stmts.incrementPvpWin.run(player2Jid);
+      if (draws2) stmts.incrementPvpDraw.run(player2Jid);
+      if (losses2) stmts.incrementPvpLoss.run(player2Jid);
+    });
+
+    try {
+      updateGlobalPlayer1();
+      updateGlobalPlayer2();
+    } catch (e) {
+      console.error('Error updating global stats:', e);
+    }
+  }
+};
+
+// ==================== PVP SEASON OPERATIONS ====================
+
+export const seasonOps = {
+  getCurrentSeasonId: (): number => {
+    const season = stmts.getCurrentSeason.get() as any;
+    if (!season) {
+      // Create first season if none exists
+      const result = stmts.createSeason.run(1, new Date().toISOString(), 'active');
+      return result.lastInsertRowid as number;
+    }
+    return season.id;
+  },
+
+  getCurrentSeason: (): any => {
+    return stmts.getCurrentSeason.get();
+  },
+
+  createNewSeason: (): any => {
+    // Close current season (mark as inactive)
+    const currentSeason = stmts.getCurrentSeason.get() as any;
+    if (currentSeason) {
+      stmts.closeSeason.run(currentSeason.id);
+      console.log(`📊 Season ${currentSeason.season_number} closed (inactive)`);
+    }
+
+    // Create new season (mark as active)
+    const nextSeasonNumber = (currentSeason?.season_number || 0) + 1;
+    const result = stmts.createSeason.run(nextSeasonNumber, new Date().toISOString(), 'active');
+    
+    // Reset all current stats for new season
+    stmts.resetCurrentStats.run();
+
+    return stmts.getSeasonById.get(result.lastInsertRowid);
+  },
+
+  getSeasonLeaderboard: (seasonId: number, limit: number = 10): any[] => {
+    return stmts.getSeasonLeaderboard.all(seasonId, limit);
+  },
+
+  getCurrentSeasonLeaderboard: (limit: number = 10): any[] => {
+    const seasonId = seasonOps.getCurrentSeasonId();
+    return stmts.getSeasonLeaderboard.all(seasonId, limit);
+  },
+
+  getSeasonStats: (seasonId: number, userJid: string): any => {
+    return stmts.getSeasonStats.get(seasonId, userJid);
+  },
+
+  getAllSeasons: (): any[] => {
+    return stmts.getAllSeasons.all();
+  },
+
+  updateSeasonPositions: (seasonId: number): void => {
+    const leaderboard = stmts.getSeasonLeaderboard.all(seasonId, 10000) as any[];
+    leaderboard.forEach((stat, index) => {
+      stmts.updateSeasonPositions.run(index + 1, stat.id);
+    });
+  },
+
+  // Clear all PVP records (admin only)
+  clearAllPvpRecords: (): void => {
+    try {
+      stmts.clearAllPvpMatches.run();
+      stmts.clearAllPvpStats.run();
+      stmts.clearAllPvpSeasonStats.run();
+      stmts.clearAllPvpSeasons.run();
+      console.log('✅ All PVP records cleared');
+    } catch (error) {
+      console.error('Error clearing PVP records:', error);
+      throw error;
+    }
+  },
+
+  // Reinitialize PVP system (create Season 1)
+  reinitializePvp: (): any => {
+    try {
+      // Clear everything first
+      seasonOps.clearAllPvpRecords();
+      
+      // Create Season 1
+      const result = stmts.createSeason.run(1, new Date().toISOString(), 'active');
+      const season = stmts.getSeasonById.get(result.lastInsertRowid);
+      console.log('✅ PVP system reinitialized - Season 1 created');
+      return season;
+    } catch (error) {
+      console.error('Error reinitializing PVP:', error);
+      throw error;
+    }
   }
 };

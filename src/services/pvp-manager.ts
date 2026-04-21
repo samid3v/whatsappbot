@@ -1,5 +1,5 @@
 import { waClient } from '../client';
-import { pvpOps, pvpStatsOps, userOps } from '../database/db';
+import { pvpOps, pvpStatsOps, userOps, seasonOps } from '../database/db';
 import { formatJid, formatDate } from '../utils/helpers';
 import { msg } from '../utils/messages';
 
@@ -37,7 +37,7 @@ class PvpManager {
             return `❌ Match #${matchId} is already ${match.status}.`;
         }
 
-        // Apply stats
+        // Apply stats (atomic transaction)
         pvpStatsOps.applyMatchStats(match.player1_jid, match.player2_jid, match.player1_score, match.player2_score);
 
         // Mark as approved
@@ -113,16 +113,18 @@ class PvpManager {
         await waClient.sendMessage(groupJid, msg.pendingMatches(matchesText));
     }
 
-    // Send the PVP leaderboard
+    // Send the PVP leaderboard (current season)
     async sendLeaderboard(groupJid: string, limit: number = 10): Promise<void> {
-        const leaderboard = pvpStatsOps.getLeaderboard(limit);
+        const season = seasonOps.getCurrentSeason();
+        const leaderboard = seasonOps.getCurrentSeasonLeaderboard(limit);
 
         if (leaderboard.length === 0) {
             await waClient.sendMessage(groupJid, msg.pvpLeaderboardEmpty());
             return;
         }
 
-        let table = 'Pos | Player | Pts | W | D | L | GF:GA\n';
+        let table = `📊 *Season ${season?.season_number || 1}* Leaderboard\n`;
+        table += 'Pos | Player | Pts | W | D | L | GF:GA\n';
         table += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
 
         for (let i = 0; i < leaderboard.length; i++) {
@@ -138,12 +140,24 @@ class PvpManager {
         await waClient.sendMessage(groupJid, msg.pvpLeaderboard(table, leaderboard.length));
     }
 
-    // Send player profile/stats
+    // Send player profile/stats (current season)
     async sendProfile(groupJid: string, targetJid: string): Promise<void> {
-        pvpStatsOps.getOrCreate(targetJid);
-        const stats = pvpStatsOps.get(targetJid);
+        const season = seasonOps.getCurrentSeason();
+        const seasonId = season?.id || seasonOps.getCurrentSeasonId();
+        
+        // Get season stats for current week
+        let seasonStats = seasonOps.getSeasonStats(seasonId, targetJid);
+        
+        // If no season stats, create entry
+        if (!seasonStats) {
+            pvpStatsOps.getOrCreate(targetJid);
+            seasonStats = seasonOps.getSeasonStats(seasonId, targetJid);
+        }
 
-        if (!stats) {
+        // Get all-time stats (sum of all weeks)
+        const allTimeStats = pvpStatsOps.getAllTimeStats(targetJid);
+
+        if (!allTimeStats || allTimeStats.matches_played === 0) {
             await waClient.sendMessage(groupJid, `❌ Could not find stats for this player.`);
             return;
         }
@@ -153,14 +167,15 @@ class PvpManager {
 
         const recentMatches = pvpOps.getMatchHistory(targetJid, 5);
 
+        // Show all-time stats in profile
         const statsText = msg.pvpProfileStats(
-            stats.points || 0,
-            stats.wins || 0,
-            stats.draws || 0,
-            stats.losses || 0,
-            stats.goals_for || 0,
-            stats.goals_against || 0,
-            stats.matches_played || 0
+            allTimeStats.points || 0,
+            allTimeStats.wins || 0,
+            allTimeStats.draws || 0,
+            allTimeStats.losses || 0,
+            allTimeStats.goals_for || 0,
+            allTimeStats.goals_against || 0,
+            allTimeStats.matches_played || 0
         );
 
         let recentText = '';
