@@ -544,7 +544,7 @@ registerCommand({
     name: 'tcr',
     aliases: ['tourneycreate', 'tc'],
     description: 'Create tournament (opens registration)',
-    usage: '.tcr [name] [type] [max]',
+    usage: '.tcr [name] [type] [max]\nExamples: .tcr league1 se 8 | .tcr "league 1" se 8',
     minArgs: 2,
     requiredRole: ['admin'],
     execute: async (args: string[], context: CommandContext) => {
@@ -559,11 +559,29 @@ registerCommand({
             return;
         }
 
-        const name = args[0];
-        const type = args[1];
-        const maxPlayers = args[2] ? parseInt(args[2], 10) : null;
+        // Find the type argument (se, de, rr, rr1, rr2, etc.)
+        const validTypes = ['se', 'de', 'rr', 'rr1', 'rr2', 'single_elimination', 'double_elimination', 'round_robin'];
+        let typeIndex = -1;
+        let type = '';
 
-        if (!['se', 'de', 'rr', 'rr1', 'rr2', 'single_elimination', 'double_elimination', 'round_robin'].includes(type)) {
+        for (let i = 0; i < args.length; i++) {
+            if (validTypes.includes(args[i].toLowerCase())) {
+                typeIndex = i;
+                type = args[i].toLowerCase();
+                break;
+            }
+        }
+
+        if (typeIndex === -1) {
+            await waClient.sendMessage(context.jid, msg.tournamentInvalidType());
+            return;
+        }
+
+        // Everything before type is the name
+        const name = args.slice(0, typeIndex).join(' ').replace(/^["']|["']$/g, '');
+        const maxPlayers = args[typeIndex + 1] ? parseInt(args[typeIndex + 1], 10) : null;
+
+        if (!validTypes.includes(type)) {
             await waClient.sendMessage(context.jid, msg.tournamentInvalidType());
             return;
         }
