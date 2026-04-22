@@ -623,29 +623,94 @@ registerCommand({
 registerCommand({
     name: 'tj',
     aliases: ['tourneyjoin'],
-    description: 'Join active tournament',
-    usage: '.tj',
+    description: 'Join tournament by ID with squad name',
+    usage: '.tj [id] [squad]\nExamples: .tj 1 Man United | .tj 2 "Liverpool FC"',
+    minArgs: 1,
     execute: async (args: string[], context: CommandContext) => {
-        const active = tournamentOps.getActive();
-        if (active.length === 0) {
-            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+        const tournamentIdArg = args[0];
+        const squadName = args.slice(1).join(' ').replace(/^["']|["']$/g, '') || 'No Squad';
+
+        // Try to parse tournament ID
+        const tournamentId = parseInt(tournamentIdArg, 10);
+        if (isNaN(tournamentId)) {
+            // Show all active tournaments
+            const active = tournamentOps.getActive();
+            if (active.length === 0) {
+                await waClient.sendMessage(context.jid, '❌ No active tournaments');
+                return;
+            }
+
+            let message = `❌ Invalid tournament ID!\n\n`;
+            message += `📋 *Active Tournaments:*\n\n`;
+            for (const t of active) {
+                const participants = tournamentOps.getParticipants(t.id);
+                const status = t.status === 'registration' ? '🟢 Open' : '🔴 ' + t.status;
+                message += `🆔 ${t.id} - ${t.name}\n`;
+                message += `   ${status} | ${participants.length}${t.max_players ? `/${t.max_players}` : ''} players\n\n`;
+            }
+            message += `📝 *How to join:*\n`;
+            message += `.tj 1 Man United\n`;
+            message += `.tj 2 Liverpool\n`;
+            message += `.tj 3 "Chelsea FC"`;
+
+            await waClient.sendMessage(context.jid, message);
             return;
         }
 
-        const t = active[0];
+        // Get specific tournament
+        const t = tournamentOps.get(tournamentId);
+        if (!t) {
+            await waClient.sendMessage(context.jid, `❌ Tournament #${tournamentId} not found`);
+            return;
+        }
+
         if (t.status !== 'registration') {
-            await waClient.sendMessage(context.jid, msg.registrationClosed());
+            await waClient.sendMessage(context.jid, 
+                `❌ Tournament #${tournamentId} is ${t.status}\n\n` +
+                `Registration is closed. Try another tournament!`
+            );
             return;
         }
 
         const participants = tournamentOps.getParticipants(t.id);
-        if (t.max_players && participants.length >= t.max_players) {
-            await waClient.sendMessage(context.jid, msg.tournamentFull());
+        
+        // Check if already joined
+        const alreadyJoined = participants.find(p => p.user_jid === context.senderJid);
+        if (alreadyJoined) {
+            await waClient.sendMessage(context.jid, 
+                `❌ You already joined tournament #${t.id}!\n\n` +
+                `Squad: ${alreadyJoined.squad_name}`
+            );
             return;
         }
 
-        tournamentOps.addParticipant(t.id, context.senderJid);
-        await waClient.sendMessage(context.jid, msg.tournamentJoined(t.name, participants.length + 1));
+        // Check if tournament is full
+        if (t.max_players && participants.length >= t.max_players) {
+            await waClient.sendMessage(context.jid, 
+                `❌ *TOURNAMENT FULL* 🏆\n\n` +
+                `Tournament #${t.id}: ${t.name}\n` +
+                `Players: ${participants.length}/${t.max_players}\n\n` +
+                `Try another tournament!`
+            );
+            return;
+        }
+
+        tournamentOps.addParticipant(t.id, context.senderJid, squadName);
+        
+        const newCount = participants.length + 1;
+        const isFull = t.max_players && newCount >= t.max_players;
+
+        let message = `✅ *JOINED* 🎮\n\n`;
+        message += `Tournament #${t.id}: ${t.name}\n`;
+        message += `Squad: ${squadName}\n`;
+        message += `Players: ${newCount}/${t.max_players || '∞'}\n`;
+
+        if (isFull) {
+            message += `\n🔴 *TOURNAMENT FULL!*\n`;
+            message += `Ready to start! Admin use: .tstart`;
+        }
+
+        await waClient.sendMessage(context.jid, message);
     },
 });
 
@@ -653,23 +718,52 @@ registerCommand({
 registerCommand({
     name: 'tl',
     aliases: ['tourneyleave'],
-    description: 'Leave tournament',
-    usage: '.tl',
+    description: 'Leave tournament by ID',
+    usage: '.tl [id]\nExample: .tl 1',
+    minArgs: 1,
     execute: async (args: string[], context: CommandContext) => {
-        const active = tournamentOps.getActive();
-        if (active.length === 0) {
-            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+        const tournamentIdArg = args[0];
+        const tournamentId = parseInt(tournamentIdArg, 10);
+
+        if (isNaN(tournamentId)) {
+            const active = tournamentOps.getActive();
+            if (active.length === 0) {
+                await waClient.sendMessage(context.jid, '❌ No active tournaments');
+                return;
+            }
+
+            let message = `❌ Invalid tournament ID!\n\n`;
+            message += `📋 *Active Tournaments:*\n\n`;
+            for (const t of active) {
+                const participants = tournamentOps.getParticipants(t.id);
+                const status = t.status === 'registration' ? '🟢 Open' : '🔴 ' + t.status;
+                message += `🆔 ${t.id} - ${t.name}\n`;
+                message += `   ${status} | ${participants.length}${t.max_players ? `/${t.max_players}` : ''} players\n\n`;
+            }
+            message += `📝 *How to leave:*\n`;
+            message += `.tl 1\n`;
+            message += `.tl 2`;
+
+            await waClient.sendMessage(context.jid, message);
             return;
         }
 
-        const t = active[0];
+        const t = tournamentOps.get(tournamentId);
+        if (!t) {
+            await waClient.sendMessage(context.jid, `❌ Tournament #${tournamentId} not found`);
+            return;
+        }
+
         if (t.status !== 'registration') {
-            await waClient.sendMessage(context.jid, msg.cannotLeaveInProgress());
+            await waClient.sendMessage(context.jid, 
+                `❌ Cannot leave tournament #${tournamentId}\n\n` +
+                `Tournament is ${t.status}. You can only leave during registration!`
+            );
             return;
         }
 
         tournamentOps.removeParticipant(t.id, context.senderJid);
-        await waClient.sendMessage(context.jid, msg.tournamentLeft(t.name));
+        await waClient.sendMessage(context.jid, `✅ Left tournament #${t.id}: ${t.name}`);
     },
 });
 
@@ -697,36 +791,78 @@ registerCommand({
 registerCommand({
     name: 'ts',
     aliases: ['tourneystatus'],
-    description: 'Tournament status',
-    usage: '.ts',
+    description: 'Tournament status and participants by ID',
+    usage: '.ts [id]\nExample: .ts 1',
     execute: async (args: string[], context: CommandContext) => {
-        const active = tournamentOps.getActive();
-        if (active.length === 0) {
-            await waClient.sendMessage(context.jid, msg.noActiveTournament());
+        let tournamentId: number | null = null;
+
+        if (args[0]) {
+            tournamentId = parseInt(args[0], 10);
+            if (isNaN(tournamentId)) {
+                tournamentId = null;
+            }
+        }
+
+        // If no ID provided, show all active tournaments
+        if (!tournamentId) {
+            const active = tournamentOps.getActive();
+            if (active.length === 0) {
+                await waClient.sendMessage(context.jid, '❌ No active tournaments');
+                return;
+            }
+
+            let message = `📋 *Active Tournaments:*\n\n`;
+            for (const t of active) {
+                const participants = tournamentOps.getParticipants(t.id);
+                const status = t.status === 'registration' ? '🟢 Open' : '🔴 ' + t.status;
+                message += `🆔 ${t.id} - ${t.name}\n`;
+                message += `   ${status} | ${participants.length}${t.max_players ? `/${t.max_players}` : ''} players\n\n`;
+            }
+            message += `📝 *How to check:*\n`;
+            message += `.ts 1\n`;
+            message += `.ts 2`;
+
+            await waClient.sendMessage(context.jid, message);
             return;
         }
 
-        const t = active[0];
+        const t = tournamentOps.get(tournamentId);
+        if (!t) {
+            await waClient.sendMessage(context.jid, `❌ Tournament #${tournamentId} not found`);
+            return;
+        }
+
         const participants = tournamentOps.getParticipants(t.id);
         const pendingApproval = tournamentOps.getPendingApproval(t.id);
 
         const typeName = t.type === 'single_elimination' ? 'Knockout' :
             t.type === 'double_elimination' ? 'Double Elim' : 'League';
 
-        let statusMsg = `🏆 *${t.name}*\n` +
+        let statusMsg = `🏆 *Tournament #${t.id}: ${t.name}*\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
             `📊 Type: ${typeName}\n` +
             `📋 Status: ${t.status}\n` +
-            `👥 Players: ${participants.length}\n` +
+            `👥 Players: ${participants.length}${t.max_players ? `/${t.max_players}` : ''}\n` +
             `🔄 Round: ${t.current_round}\n`;
 
+        if (t.status === 'registration' && participants.length > 0) {
+            statusMsg += `\n📝 *Registered Players:*\n`;
+            for (let i = 0; i < participants.length; i++) {
+                const p = participants[i];
+                const user = userOps.get(p.user_jid);
+                const name = user?.name || formatJid(p.user_jid);
+                const squad = p.squad_name || 'No Squad';
+                statusMsg += `${i + 1}. ${name} (${squad})\n`;
+            }
+        }
+
         if (pendingApproval.length > 0) {
-            statusMsg += `⏳ Pending approval: ${pendingApproval.length}\n`;
+            statusMsg += `\n⏳ Pending approval: ${pendingApproval.length}\n`;
         }
 
         if (t.status === 'completed' && t.winner_jid) {
             const winnerUser = userOps.get(t.winner_jid);
-            statusMsg += `🏆 Winner: ${winnerUser?.name || formatJid(t.winner_jid)}\n`;
+            statusMsg += `\n🏆 Winner: ${winnerUser?.name || formatJid(t.winner_jid)}\n`;
         }
 
         await waClient.sendMessage(context.jid, statusMsg);
@@ -1079,7 +1215,8 @@ registerCommand({
         const { rateLimiter } = await import('../services/rate-limiter');
         if (rateLimiter.isLimited(context.senderJid, 'pvpscores')) {
             const resetTime = rateLimiter.getResetTime(context.senderJid, 'pvpscores');
-            await waClient.sendMessage(context.jid, `⏱️ Too many match submissions. Try again in ${resetTime}s`);
+            const funnyMsg = rateLimiter.getFunnyMessage(resetTime);
+            await waClient.sendMessage(context.jid, funnyMsg);
             return;
         }
 
@@ -1565,7 +1702,8 @@ registerCommand({
 
         if (rateLimiter.isLimited(context.senderJid, 'request')) {
             const resetTime = rateLimiter.getResetTime(context.senderJid, 'request');
-            return await waClient.sendMessage(context.jid, `⏱️ Too many requests. Try again in ${resetTime}s`);
+            const funnyMsg = rateLimiter.getFunnyMessage(resetTime);
+            return await waClient.sendMessage(context.jid, funnyMsg);
         }
 
         // Create request
@@ -1716,7 +1854,8 @@ registerCommand({
 
         if (rateLimiter.isLimited(context.senderJid, 'schedule')) {
             const resetTime = rateLimiter.getResetTime(context.senderJid, 'schedule');
-            return await waClient.sendMessage(context.jid, `⏱️ Too many schedule requests. Try again in ${resetTime}s`);
+            const funnyMsg = rateLimiter.getFunnyMessage(resetTime);
+            return await waClient.sendMessage(context.jid, funnyMsg);
         }
 
         if (!context.mentionedJids || context.mentionedJids.length === 0) {

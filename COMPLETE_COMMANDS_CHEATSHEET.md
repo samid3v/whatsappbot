@@ -1,45 +1,53 @@
 # Complete Commands Cheatsheet - All Commands with Examples
 
-## 📊 Challenge Reports
+## 🏆 Tournaments (Simplified IDs)
 
-### Daily Report
+### Create Tournament
 ```
-.dailyreport                    # Your daily stats
-.dailyreport @Ahmed             # Ahmed's daily stats
-.dailyreport @Ahmed 2025-04-22  # Specific date
+.tcr league1 se 8               # Create knockout tournament
+.tcr "league 1" se 8            # With spaces in name
+.tcr cup rr 6                   # Round robin
+.tcr "Spring Cup" de 4          # Double elimination
 ```
-**Aliases**: `.dreport`, `.dchallenge`
+**Response shows:** Tournament ID (e.g., `#1`, `#2`, `#3`)
 
-### Weekly Report
+### Join Tournament
 ```
-.weeklyreport                   # Your weekly stats
-.weeklyreport @Ahmed            # Ahmed's weekly stats
-.weeklyreport @Ahmed 2025-04-21 # Specific week
+.tj 1 Man United                # Join tournament #1 with squad
+.tj 2 "Liverpool FC"            # With quotes
+.tj 3 Chelsea                   # Simple squad name
 ```
-**Aliases**: `.wreport`, `.wchallenge`
+**If you forget the ID:** `.tj` shows all active tournaments
 
-### Group Summary
+### View Tournament Status
 ```
-.weeklysummary                  # Current week
-.weeklysummary 2025-04-21       # Specific week
+.ts 1                           # Check tournament #1
+.ts 2                           # Check tournament #2
 ```
-**Aliases**: `.wsummary`, `.groupweekly`
+**If you forget the ID:** `.ts` lists all active tournaments with player counts
+
+### Leave Tournament
+```
+.tl 1                           # Leave tournament #1
+.tl 2                           # Leave tournament #2
+```
+**If you forget the ID:** `.tl` lists all active tournaments
 
 ---
 
-## 🎮 Friendly Requests
+## 🎮 Friendly Requests (Simple IDs)
 
 ### Request Match
 ```
-.request                        # Request friendly match
+.request                        # Creates request with ID (e.g., `1`, `2`, `3`)
 ```
-**Aliases**: `.req`, `.friendly`
 **Auto-tags**: Top 5 active players from the week
+**Response shows:** Request ID and expiry time
 
 ### Accept/Decline Request
 ```
-.accept req_1                   # Accept request
-.decline req_1                  # Decline request
+.accept 1                       # Accept request #1
+.decline 2                      # Decline request #2
 ```
 **Aliases**: `.yes`, `.ok` (accept), `.no`, `.deny` (decline)
 
@@ -53,6 +61,36 @@
 
 ---
 
+## 📊 Challenge Reports
+
+### Daily Report
+```
+.dailyreport                    # Your daily stats
+.dailyreport @Ahmed             # Ahmed's daily stats
+.dailyreport @Ahmed 2025-04-22  # Specific date
+```
+**Aliases**: `.dreport`, `.dchallenge`
+**Shows**: Challenges completed, rewards, matches played, win rate
+
+### Weekly Report
+```
+.weeklyreport                   # Your weekly stats
+.weeklyreport @Ahmed            # Ahmed's weekly stats
+.weeklyreport @Ahmed 2025-04-21 # Specific week
+```
+**Aliases**: `.wreport`, `.wchallenge`
+**Shows**: Weekly summary, best day, total rewards
+
+### Group Summary
+```
+.weeklysummary                  # Current week
+.weeklysummary 2025-04-21       # Specific week
+```
+**Aliases**: `.wsummary`, `.groupweekly`
+**Shows**: Top 5 performers, group statistics
+
+---
+
 ## 🎯 Daily Challenges
 
 ### View Challenges
@@ -60,6 +98,7 @@
 .challenges                     # View your challenges
 ```
 **Aliases**: `.ch`, `.daily`, `.quest`
+**Shows**: In-progress and completed challenges with progress
 
 ### Claim Reward
 ```
@@ -79,50 +118,65 @@
 ```
 **Aliases**: `.sched`, `.book`
 **Format**: `.schedule @player [date] [time]`
+**Reminder**: 15 minutes before match
 
 ### View Scheduled Matches
 ```
 .scheduled                      # View upcoming matches
 ```
-**Aliases**: `.sched`, `.upcoming`
-
 ---
 
-## 🏆 Tournaments
+## 🏆 Tournaments (Simplified IDs)
 
 ### Create Tournament
 ```
-.tcr "Spring Cup" se 8          # Single elimination, 8 players
-.tcr "League" rr 6              # Round robin, 6 players
-.tcr "Double" de 4              # Double elimination, 4 players
-.tcr "Cup" se 8 3 3 3           # With stage durations (3 days each)
-.tcr "League" rr2 6 7           # Round robin 2 legs, 7 days
+.tcr league1 se 8               # Create knockout tournament
+.tcr "league 1" se 8            # With spaces in name
+.tcr cup rr 6                   # Round robin
+.tcr "Spring Cup" de 4          # Double elimination
 ```
 **Aliases**: `.tc`, `.tourneycreate`
 **Types**: 
-- `se` = Single Elimination
+- `se` = Single Elimination (Knockout)
 - `de` = Double Elimination
 - `rr` = Round Robin (1 leg)
 - `rr2` = Round Robin (2 legs)
+**Response shows:** Tournament ID (e.g., `#1`, `#2`, `#3`)
 
-### Join/Leave Tournament
+### Join Tournament
 ```
-.tj                             # Join tournament
-.tl                             # Leave tournament
+.tj 1 Man United                # Join tournament #1 with squad
+.tj 2 "Liverpool FC"            # With quotes
+.tj 3 Chelsea                   # Simple squad name
 ```
-**Aliases**: `.tourneyjoin`, `.tourneyleave`
+**Aliases**: `.tourneyjoin`
+**If you forget the ID:** `.tj` shows all active tournaments
+**Shows**: Tournament ID, squad name, player count, "FULL" if max reached
+
+### Leave Tournament
+```
+.tl 1                           # Leave tournament #1
+.tl 2                           # Leave tournament #2
+```
+**Aliases**: `.tourneyleave`
+**If you forget the ID:** `.tl` lists all active tournaments
+**Note**: Can only leave during registration phase
+
+### View Tournament Status
+```
+.ts 1                           # Check tournament #1
+.ts 2                           # Check tournament #2
+```
+**Aliases**: `.tourneystatus`
+**If you forget the ID:** `.ts` lists all active tournaments
+**Shows**: All registered players with squad names, status, round
 
 ### Start Tournament
 ```
 .tstart                         # Generate bracket and start
 ```
 **Aliases**: `.tourneystart`
-
-### Tournament Status
-```
-.ts                             # View tournament status
-```
-**Aliases**: `.tourneystatus`
+**Admin only**
 
 ### View Bracket
 ```
@@ -144,6 +198,7 @@
 .tpending                       # View matches awaiting approval
 ```
 **Aliases**: `.tpend`, `.tp`
+**Admin only**
 
 ### Approve/Reject Match (Admin)
 ```
@@ -163,12 +218,14 @@
 .tnext                          # Advance to next round (knockout)
 ```
 **Aliases**: `.tnextround`, `.tnr`
+**Admin only**
 
 ### Complete Tournament
 ```
 .tend                           # Complete tournament
 ```
 **Aliases**: `.tourneyend`, `.tcomplete`
+**Admin only**
 
 ### Tournament Scheduling
 ```

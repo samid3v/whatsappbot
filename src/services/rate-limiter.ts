@@ -90,6 +90,23 @@ class RateLimiter {
       }
     }
   }
+
+  // Get funny rate limit message
+  getFunnyMessage(resetSeconds: number): string {
+    const messages = [
+      `⏱️ Whoa there! Easy on me, I'm just a bot! Try again in ${resetSeconds}s 🤖`,
+      `🚀 Slow down, speed racer! I can't keep up. Retry in ${resetSeconds}s ⏳`,
+      `😅 You're too fast! Give me ${resetSeconds}s to catch my breath 💨`,
+      `🔥 Chill! You're spamming faster than a striker on goal. Wait ${resetSeconds}s ⚽`,
+      `⚡ Pump the brakes! I need ${resetSeconds}s to recover 🛑`,
+      `🎮 Bro, you're speedrunning this! Wait ${resetSeconds}s please 😂`,
+      `🏃 Slow down! Even Messi takes breaks. Retry in ${resetSeconds}s ⏰`,
+      `💪 You're too strong for me! Give me ${resetSeconds}s to rest 😴`,
+      `🌪️ Tornado mode activated? Chill for ${resetSeconds}s 🌀`,
+      `🎯 Accuracy over speed! Wait ${resetSeconds}s and try again 🎪`,
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
+  }
 }
 
 export const rateLimiter = new RateLimiter();

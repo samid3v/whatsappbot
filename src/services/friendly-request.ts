@@ -22,14 +22,13 @@ interface PlayerFrequency {
 
 class FriendlyRequestManager {
   private requests: Map<string, FriendlyRequest> = new Map();
+  private requestCounter: number = 1;
   private playerFrequency: Map<string, PlayerFrequency> = new Map();
 
   // Create a friendly request
   createRequest(requesterJid: string, groupJid: string): string {
-    // Use timestamp + random suffix for unique IDs
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    const id = `req_${timestamp}_${random}`;
+    // Use simple counter for short IDs
+    const id = `${this.requestCounter++}`;
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 60000); // 30 minutes
 

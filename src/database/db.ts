@@ -190,6 +190,25 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_pvp_season_stats_season ON pvp_season_stats(season_id);
   CREATE INDEX IF NOT EXISTS idx_pvp_season_stats_points ON pvp_season_stats(season_id, points DESC);
+
+  CREATE TABLE IF NOT EXISTS challenge_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_jid TEXT NOT NULL,
+    record_date TEXT NOT NULL,
+    completed_challenges TEXT NOT NULL DEFAULT '[]',
+    total_reward INTEGER NOT NULL DEFAULT 0,
+    matches_played INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    draws INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_jid, record_date)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_challenge_records_user ON challenge_records(user_jid);
+  CREATE INDEX IF NOT EXISTS idx_challenge_records_date ON challenge_records(record_date);
+  CREATE INDEX IF NOT EXISTS idx_challenge_records_user_date ON challenge_records(user_jid, record_date);
 `);
 
 // Migrate existing pvp_matches tables (add columns if missing)
@@ -209,6 +228,9 @@ try { db.exec("ALTER TABLE tournament_matches ADD COLUMN match_status TEXT NOT N
 try { db.exec("ALTER TABLE tournament_matches ADD COLUMN proof TEXT"); } catch {}
 try { db.exec("ALTER TABLE tournament_matches ADD COLUMN approved_by TEXT"); } catch {}
 try { db.exec("ALTER TABLE tournament_matches ADD COLUMN rejection_reason TEXT"); } catch {}
+
+// Migrate tournament_participants to add squad_name
+try { db.exec("ALTER TABLE tournament_participants ADD COLUMN squad_name TEXT"); } catch {}
 
 // Run migrations for season tables
 try {
@@ -296,7 +318,7 @@ const stmts = {
     VALUES (?, ?, ?, ?, 'registration', ?)`),
   getTournament: db.prepare('SELECT * FROM tournaments WHERE id = ?'),
   getActiveTournaments: db.prepare("SELECT * FROM tournaments WHERE status != 'completed'"),
-  insertParticipant: db.prepare('INSERT INTO tournament_participants (tournament_id, user_jid) VALUES (?, ?)'),
+  insertParticipant: db.prepare('INSERT INTO tournament_participants (tournament_id, user_jid, squad_name) VALUES (?, ?, ?)'),
   findParticipant: db.prepare('SELECT * FROM tournament_participants WHERE tournament_id = ? AND user_jid = ?'),
   deleteParticipant: db.prepare('DELETE FROM tournament_participants WHERE tournament_id = ? AND user_jid = ?'),
   getParticipants: db.prepare('SELECT * FROM tournament_participants WHERE tournament_id = ?'),
@@ -395,6 +417,38 @@ const stmts = {
   clearAllPvpStats: db.prepare('DELETE FROM pvp_stats'),
   clearAllPvpSeasonStats: db.prepare('DELETE FROM pvp_season_stats'),
   clearAllPvpSeasons: db.prepare('DELETE FROM pvp_seasons'),
+
+  // Challenge Records
+  insertChallengeRecord: db.prepare(`
+    INSERT INTO challenge_records (user_jid, record_date, completed_challenges, total_reward, matches_played, wins, draws, losses)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_jid, record_date) DO UPDATE SET
+      completed_challenges = excluded.completed_challenges,
+      total_reward = excluded.total_reward,
+      matches_played = excluded.matches_played,
+      wins = excluded.wins,
+      draws = excluded.draws,
+      losses = excluded.losses,
+      updated_at = datetime('now')
+  `),
+  getChallengeRecord: db.prepare('SELECT * FROM challenge_records WHERE user_jid = ? AND record_date = ?'),
+  getChallengeRecordsByDateRange: db.prepare(`
+    SELECT * FROM challenge_records 
+    WHERE user_jid = ? AND record_date >= ? AND record_date <= ?
+    ORDER BY record_date DESC
+  `),
+  getChallengeRecordsByUser: db.prepare(`
+    SELECT * FROM challenge_records 
+    WHERE user_jid = ? 
+    ORDER BY record_date DESC 
+    LIMIT ?
+  `),
+  getAllChallengeRecords: db.prepare(`
+    SELECT * FROM challenge_records 
+    WHERE record_date >= ? AND record_date <= ?
+    ORDER BY record_date DESC, total_reward DESC
+  `),
+  deleteChallengeRecordsOlderThan: db.prepare('DELETE FROM challenge_records WHERE record_date < ?'),
 };
 
 // ==================== HELPER FUNCTIONS ====================
@@ -585,10 +639,10 @@ export const tournamentOps = {
     stmts.updateTournamentStatus.run(status, status, status, status, winnerJid || null, id);
   },
 
-  addParticipant: (tournamentId: number, userJid: string): void => {
+  addParticipant: (tournamentId: number, userJid: string, squadName?: string): void => {
     const existing = stmts.findParticipant.get(tournamentId, userJid);
     if (!existing) {
-      stmts.insertParticipant.run(tournamentId, userJid);
+      stmts.insertParticipant.run(tournamentId, userJid, squadName || 'No Squad');
     }
   },
 
