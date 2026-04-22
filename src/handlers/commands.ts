@@ -928,6 +928,96 @@ registerCommand({
     },
 });
 
+// ==================== TOURNAMENT SCHEDULING ====================
+
+// Tournament Schedule - View full schedule
+registerCommand({
+    name: 'tschedule',
+    aliases: ['tsched', 'tschedules'],
+    description: 'View tournament schedule',
+    usage: '.tschedule',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { tournamentScheduler } = await import('../services/tournament-scheduler');
+
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            return await waClient.sendMessage(context.jid, '❌ No active tournament');
+        }
+
+        const tournament = active[0];
+        const schedule = tournamentScheduler.getSchedule(tournament.id);
+
+        if (!schedule) {
+            return await waClient.sendMessage(context.jid, '❌ No schedule found for this tournament');
+        }
+
+        const text = tournamentScheduler.formatSchedule(tournament.id);
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// Tournament Current Stage - View current stage info
+registerCommand({
+    name: 'tstage',
+    aliases: ['tcurrentstage', 'tstageinfo'],
+    description: 'View current stage information',
+    usage: '.tstage',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { tournamentScheduler } = await import('../services/tournament-scheduler');
+
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            return await waClient.sendMessage(context.jid, '❌ No active tournament');
+        }
+
+        const tournament = active[0];
+        const text = tournamentScheduler.formatCurrentStageInfo(tournament.id);
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// Tournament Stages - View all stages with details
+registerCommand({
+    name: 'tstages',
+    aliases: ['tallstages', 'tstagedetails'],
+    description: 'View all tournament stages',
+    usage: '.tstages',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { tournamentScheduler } = await import('../services/tournament-scheduler');
+
+        const active = tournamentOps.getActive();
+        if (active.length === 0) {
+            return await waClient.sendMessage(context.jid, '❌ No active tournament');
+        }
+
+        const tournament = active[0];
+        const schedule = tournamentScheduler.getSchedule(tournament.id);
+
+        if (!schedule) {
+            return await waClient.sendMessage(context.jid, '❌ No schedule found');
+        }
+
+        let text = `📅 *${tournament.name} - All Stages*\n\n`;
+
+        for (const stage of schedule.stages) {
+            const icon = stage.status === 'active' ? '🔴' : stage.status === 'completed' ? '✅' : '⏳';
+            const startStr = stage.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const endStr = stage.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            text += `${icon} *Stage ${stage.stageNumber}: ${stage.name}*\n`;
+            text += `   📅 ${startStr} → ${endStr}\n`;
+            text += `   ⏱️ Duration: ${stage.durationDays} days\n`;
+            text += `   🎮 Matches: ${stage.matchesCount}\n`;
+            text += `   ✅ Completed: ${stage.completedMatches}\n\n`;
+        }
+
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
 // ==================== STATS COMMANDS ====================
 
 // Leaderboard
@@ -967,6 +1057,14 @@ registerCommand({
     usage: '.pvpscores @user1 vs @user2 3:1 (with screenshot)\n.vs @opponent 3:1\n.me vs @opponent 3:1\n.25412345678 vs 25487654321 2:0',
     minArgs: 3,
     execute: async (args: string[], context: CommandContext) => {
+        // Rate limiting
+        const { rateLimiter } = await import('../services/rate-limiter');
+        if (rateLimiter.isLimited(context.senderJid, 'pvpscores')) {
+            const resetTime = rateLimiter.getResetTime(context.senderJid, 'pvpscores');
+            await waClient.sendMessage(context.jid, `⏱️ Too many match submissions. Try again in ${resetTime}s`);
+            return;
+        }
+
         // Require image proof
         if (!context.hasImage) {
             await waClient.sendMessage(context.jid, msg.proofRequired());
@@ -1120,8 +1218,35 @@ registerCommand({
         }
 
         const { pvpManager } = await import('../services/pvp-manager');
+        const { challengeManager } = await import('../services/challenge-manager');
+        const { pvpOps } = await import('../database/db');
+        
         const result = await pvpManager.approveMatch(matchId, context.senderJid);
         await waClient.sendMessage(context.jid, result);
+
+        // Update challenges for both players
+        const match = pvpOps.getById(matchId);
+        if (match) {
+            const player1Score = match.player1_score;
+            const player2Score = match.player2_score;
+
+            let result1: 'win' | 'draw' | 'loss';
+            let result2: 'win' | 'draw' | 'loss';
+
+            if (player1Score > player2Score) {
+                result1 = 'win';
+                result2 = 'loss';
+            } else if (player1Score < player2Score) {
+                result1 = 'loss';
+                result2 = 'win';
+            } else {
+                result1 = 'draw';
+                result2 = 'draw';
+            }
+
+            challengeManager.updateProgress(match.player1_jid, result1, player1Score, player2Score);
+            challengeManager.updateProgress(match.player2_jid, result2, player2Score, player1Score);
+        }
 
         // Show updated leaderboard after approval
         await pvpManager.sendLeaderboard(context.jid, 10);
@@ -1338,6 +1463,343 @@ registerCommand({
         } catch (error) {
             await waClient.sendMessage(context.jid, `❌ Error triggering week reset: ${error}`);
         }
+    },
+});
+
+// ==================== CHALLENGE REPORTS ====================
+
+// Daily challenge report
+registerCommand({
+    name: 'dailyreport',
+    aliases: ['dreport', 'dchallenge'],
+    description: 'View daily challenge report',
+    usage: '.dailyreport [@player] [date]',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { challengeTracker } = await import('../services/challenge-tracker');
+
+        let targetJid = context.senderJid;
+        let date = args[0];
+
+        // If first arg is a mention, use that player
+        if (context.mentionedJids && context.mentionedJids.length > 0) {
+            targetJid = context.mentionedJids[0];
+            date = args[1];
+        }
+
+        const text = challengeTracker.formatDailyReport(targetJid, date);
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// Weekly challenge report
+registerCommand({
+    name: 'weeklyreport',
+    aliases: ['wreport', 'wchallenge'],
+    description: 'View weekly challenge report',
+    usage: '.weeklyreport [@player] [week_start_date]',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { challengeTracker } = await import('../services/challenge-tracker');
+
+        let targetJid = context.senderJid;
+        let weekStart = args[0];
+
+        // If first arg is a mention, use that player
+        if (context.mentionedJids && context.mentionedJids.length > 0) {
+            targetJid = context.mentionedJids[0];
+            weekStart = args[1];
+        }
+
+        const text = challengeTracker.formatWeeklyReport(targetJid, weekStart);
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// Group weekly challenge summary
+registerCommand({
+    name: 'weeklysummary',
+    aliases: ['wsummary', 'groupweekly'],
+    description: 'View group weekly challenge summary',
+    usage: '.weeklysummary [week_start_date]',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { challengeTracker } = await import('../services/challenge-tracker');
+
+        const weekStart = args[0];
+        const text = challengeTracker.formatGroupWeeklySummary(weekStart);
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// ==================== FRIENDLY REQUESTS ====================
+
+// Request a friendly match
+registerCommand({
+    name: 'request',
+    aliases: ['req', 'friendly'],
+    description: 'Request a friendly match from active players',
+    usage: '.request',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { friendlyRequestManager } = await import('../services/friendly-request');
+        const { rateLimiter } = await import('../services/rate-limiter');
+
+        if (rateLimiter.isLimited(context.senderJid, 'request')) {
+            const resetTime = rateLimiter.getResetTime(context.senderJid, 'request');
+            return await waClient.sendMessage(context.jid, `⏱️ Too many requests. Try again in ${resetTime}s`);
+        }
+
+        // Create request
+        const requestId = friendlyRequestManager.createRequest(context.senderJid, context.jid);
+        const request = friendlyRequestManager.getRequest(requestId);
+
+        if (!request) {
+            return await waClient.sendMessage(context.jid, '❌ Error creating request');
+        }
+
+        // Get frequent players to tag
+        const frequentPlayers = friendlyRequestManager.getFrequentPlayers(context.jid, 5);
+        const requester = userOps.get(context.senderJid);
+        const requesterName = requester?.name || formatJid(context.senderJid);
+
+        let message = `🎮 *Friendly Match Request*\n\n`;
+        message += `${requesterName} is looking for a friendly match!\n\n`;
+
+        // Tag frequent players
+        if (frequentPlayers.length > 0) {
+            message += `👥 Tagging active players:\n`;
+            for (const player of frequentPlayers) {
+                const user = userOps.get(player.jid);
+                const name = user?.name || formatJid(player.jid);
+                message += `  @${name}\n`;
+            }
+            message += `\n`;
+        }
+
+        message += `⏱️ Expires in 30 minutes\n`;
+        message += `🆔 Request ID: ${requestId}\n\n`;
+        message += `To accept: .accept ${requestId}\n`;
+        message += `To decline: .decline ${requestId}`;
+
+        await waClient.sendMessage(context.jid, message);
+    },
+});
+
+// Accept a friendly request
+registerCommand({
+    name: 'accept',
+    aliases: ['yes', 'ok'],
+    description: 'Accept a friendly match request',
+    usage: '.accept [request_id]',
+    minArgs: 1,
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { friendlyRequestManager } = await import('../services/friendly-request');
+
+        const requestId = args[0];
+        const request = friendlyRequestManager.getRequest(requestId);
+
+        if (!request) {
+            return await waClient.sendMessage(context.jid, '❌ Request not found');
+        }
+
+        if (request.status !== 'pending') {
+            return await waClient.sendMessage(context.jid, `❌ Request is ${request.status}`);
+        }
+
+        friendlyRequestManager.acceptRequest(requestId, context.senderJid);
+
+        const user = userOps.get(context.senderJid);
+        const name = user?.name || formatJid(context.senderJid);
+        const requester = userOps.get(request.requesterJid);
+        const requesterName = requester?.name || formatJid(request.requesterJid);
+
+        let message = `✅ *Match Accepted*\n\n`;
+        message += `${name} accepted ${requesterName}'s friendly request!\n\n`;
+
+        if (request.acceptedBy && request.acceptedBy.length > 1) {
+            message += `👥 Accepted by:\n`;
+            for (const jid of request.acceptedBy) {
+                const u = userOps.get(jid);
+                const n = u?.name || formatJid(jid);
+                message += `  ✅ ${n}\n`;
+            }
+        }
+
+        message += `\n🎮 Get ready for the match!`;
+
+        await waClient.sendMessage(context.jid, message);
+    },
+});
+
+// Decline a friendly request
+registerCommand({
+    name: 'decline',
+    aliases: ['no', 'deny'],
+    description: 'Decline a friendly match request',
+    usage: '.decline [request_id]',
+    minArgs: 1,
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { friendlyRequestManager } = await import('../services/friendly-request');
+
+        const requestId = args[0];
+        const request = friendlyRequestManager.getRequest(requestId);
+
+        if (!request) {
+            return await waClient.sendMessage(context.jid, '❌ Request not found');
+        }
+
+        if (request.status !== 'pending') {
+            return await waClient.sendMessage(context.jid, `❌ Request is ${request.status}`);
+        }
+
+        friendlyRequestManager.declineRequest(requestId);
+
+        const user = userOps.get(context.senderJid);
+        const name = user?.name || formatJid(context.senderJid);
+
+        await waClient.sendMessage(context.jid, `❌ ${name} declined the friendly request`);
+    },
+});
+
+// View active players
+registerCommand({
+    name: 'activeplayers',
+    aliases: ['active', 'frequent'],
+    description: 'View most active players this week',
+    usage: '.activeplayers [limit]',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { friendlyRequestManager } = await import('../services/friendly-request');
+
+        const limit = parseInt(args[0], 10) || 10;
+        const players = friendlyRequestManager.getFrequentPlayers(context.jid, limit);
+        const text = friendlyRequestManager.formatFrequentPlayersForTag(players);
+
+        await waClient.sendMessage(context.jid, `📊 *Active Players This Week*\n\n${text}`);
+    },
+});
+
+// ==================== MATCH SCHEDULING ====================
+
+// Schedule a match
+registerCommand({
+    name: 'schedule',
+    aliases: ['sched', 'book'],
+    description: 'Schedule a match',
+    usage: '.schedule @player [date] [time]',
+    minArgs: 2,
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { matchScheduler } = await import('../services/match-scheduler');
+        const { rateLimiter } = await import('../services/rate-limiter');
+
+        if (rateLimiter.isLimited(context.senderJid, 'schedule')) {
+            const resetTime = rateLimiter.getResetTime(context.senderJid, 'schedule');
+            return await waClient.sendMessage(context.jid, `⏱️ Too many schedule requests. Try again in ${resetTime}s`);
+        }
+
+        if (!context.mentionedJids || context.mentionedJids.length === 0) {
+            return await waClient.sendMessage(context.jid, '❌ Please mention a player to schedule with');
+        }
+
+        const opponent = context.mentionedJids[0];
+        const dateStr = args[1];
+        const timeStr = args[2] || '18:00';
+
+        try {
+            const scheduledTime = new Date(`${dateStr}T${timeStr}`);
+            if (isNaN(scheduledTime.getTime())) {
+                return await waClient.sendMessage(context.jid, '❌ Invalid date/time format. Use: YYYY-MM-DD HH:MM');
+            }
+
+            const matchId = matchScheduler.schedule(context.senderJid, opponent, scheduledTime, context.jid);
+            const opponentUser = userOps.get(opponent);
+            const opponentName = opponentUser?.name || formatJid(opponent);
+            const senderUser = userOps.get(context.senderJid);
+            const senderName = senderUser?.name || formatJid(context.senderJid);
+
+            const timeStr2 = scheduledTime.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+
+            await waClient.sendMessage(context.jid, `✅ *Match Scheduled*\n\n🎮 ${senderName} vs ${opponentName}\n📅 ${timeStr2}\n🆔 ID: ${matchId}`);
+        } catch (error) {
+            console.error('Error scheduling match:', error);
+            await waClient.sendMessage(context.jid, '❌ Error scheduling match');
+        }
+    },
+});
+
+// View scheduled matches
+registerCommand({
+    name: 'scheduled',
+    aliases: ['sched', 'upcoming'],
+    description: 'View scheduled matches',
+    usage: '.scheduled',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { matchScheduler } = await import('../services/match-scheduler');
+
+        const matches = matchScheduler.getByGroup(context.jid);
+        if (matches.length === 0) {
+            return await waClient.sendMessage(context.jid, '📭 No scheduled matches');
+        }
+
+        let text = '📅 *Upcoming Matches*\n\n';
+        for (const match of matches) {
+            text += matchScheduler.formatMatch(match) + '\n';
+        }
+
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// ==================== DAILY CHALLENGES ====================
+
+// View daily challenges
+registerCommand({
+    name: 'challenges',
+    aliases: ['ch', 'daily', 'quest'],
+    description: 'View daily challenges',
+    usage: '.challenges',
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { challengeManager } = await import('../services/challenge-manager');
+
+        const text = challengeManager.formatChallenges(context.senderJid);
+        await waClient.sendMessage(context.jid, text);
+    },
+});
+
+// Claim challenge reward
+registerCommand({
+    name: 'claimreward',
+    aliases: ['claim', 'reward'],
+    description: 'Claim challenge reward',
+    usage: '.claimreward [challenge_id]',
+    minArgs: 1,
+    requiredRole: ['member'],
+    execute: async (args: string[], context: CommandContext) => {
+        const { challengeManager } = await import('../services/challenge-manager');
+
+        const challengeId = args[0];
+        const reward = challengeManager.claimReward(context.senderJid, challengeId);
+
+        if (reward === 0) {
+            return await waClient.sendMessage(context.jid, '❌ Challenge not found or already claimed');
+        }
+
+        const user = userOps.get(context.senderJid);
+        const name = user?.name || formatJid(context.senderJid);
+
+        await waClient.sendMessage(context.jid, `🎁 *Reward Claimed*\n\n${name} earned +${reward} points!`);
     },
 });
 

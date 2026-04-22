@@ -6,6 +6,11 @@ import { warnManager } from './services/warn-manager';
 import { roleManager } from './services/role-manager';
 import { statsOps } from './database/db';
 import { seasonManager } from './services/season-manager';
+import { matchScheduler } from './services/match-scheduler';
+import { challengeManager } from './services/challenge-manager';
+import { challengeTracker } from './services/challenge-tracker';
+import { friendlyRequestManager } from './services/friendly-request';
+import { tournamentScheduler } from './services/tournament-scheduler';
 import { startHealthServer } from './health';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -29,6 +34,17 @@ async function main() {
         console.log('📊 Starting season manager...');
         seasonManager.startWeeklyReset();
 
+        // Start match scheduler
+        console.log('📅 Starting match scheduler...');
+        matchScheduler.start();
+
+        // Initialize challenge manager (auto-starts daily reset)
+        console.log('🎯 Initializing challenge manager...');
+
+        // Start tournament scheduler
+        console.log('📅 Starting tournament scheduler...');
+        tournamentScheduler.start();
+
         // Schedule tasks
         console.log('⏰ Setting up scheduled tasks...');
 
@@ -40,6 +56,14 @@ async function main() {
             } catch (error) {
                 console.error('Error in mute check:', error);
             }
+        });
+
+        // Cleanup tasks every hour
+        cron.schedule('0 * * * *', async () => {
+            console.log('🧹 Running cleanup tasks...');
+            matchScheduler.cleanup?.();
+            challengeTracker.cleanup?.();
+            friendlyRequestManager.cleanup?.();
         });
 
         // Daily stats reset (optional)
@@ -66,6 +90,40 @@ async function main() {
         console.log('   • Resets automatically every Sunday at 00:00');
         console.log('   • No manual trigger needed');
         console.log('   • Past seasons archived for history');
+        console.log('');
+        console.log('📅 MATCH SCHEDULING:');
+        console.log('   • .schedule @player [date] [time]');
+        console.log('   • .scheduled - View upcoming matches');
+        console.log('   • 15-min reminders before matches');
+        console.log('');
+        console.log('📅 TOURNAMENT SCHEDULING:');
+        console.log('   • .tschedule - View tournament schedule');
+        console.log('   • .tstage - View current stage info');
+        console.log('   • .tstages - View all stages');
+        console.log('   • Auto-advance stages on deadline');
+        console.log('   • 24-hour deadline reminders');
+        console.log('');
+        console.log('🎯 DAILY CHALLENGES:');
+        console.log('   • .challenges - View daily quests');
+        console.log('   • .claimreward [id] - Claim bonus points');
+        console.log('   • Resets daily at 00:00 UTC');
+        console.log('');
+        console.log('📊 CHALLENGE REPORTS:');
+        console.log('   • .dailyreport [@player] - Daily challenge stats');
+        console.log('   • .weeklyreport [@player] - Weekly challenge stats');
+        console.log('   • .weeklysummary - Group weekly summary');
+        console.log('');
+        console.log('🎮 FRIENDLY REQUESTS:');
+        console.log('   • .request - Request a friendly match');
+        console.log('   • .accept [id] - Accept request');
+        console.log('   • .decline [id] - Decline request');
+        console.log('   • .activeplayers - View active players');
+        console.log('');
+        console.log('⏱️ RATE LIMITING:');
+        console.log('   • PVP: 5 submissions/min');
+        console.log('   • Friendly Requests: 3 per 5min');
+        console.log('   • Tournaments: 2 creates/5min');
+        console.log('   • Prevents spam abuse');
         console.log('='.repeat(40));
 
     } catch (error) {
@@ -78,12 +136,16 @@ async function main() {
 process.on('SIGINT', async () => {
     console.log('\n👋 Shutting down bot...');
     seasonManager.stopWeeklyReset();
+    matchScheduler.stop();
+    tournamentScheduler.stop();
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     console.log('\n👋 Shutting down bot...');
     seasonManager.stopWeeklyReset();
+    matchScheduler.stop();
+    tournamentScheduler.stop();
     process.exit(0);
 });
 
