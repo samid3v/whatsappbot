@@ -28,62 +28,62 @@ class ChatFlowAnalyzer {
     // Swahili patterns
     {
       keyword: 'friendly',
-      response: 'Kila hapa! 🎮 Karibu kucheza friendly match? Nitakuunganisha na wachezaji wenye nguvu!',
+      response: 'Kasongo hapa! 🎮 Karibu kucheza friendly match? Nitakuunganisha na wachezaji wenye nguvu!',
       language: 'sw',
       context: 'friendly_request'
     },
     {
       keyword: 'tournament',
-      response: 'Kila hapa! 🏆 Tunataka tournament? Niambie tu: "Kila tcr 8 players knockout"',
+      response: 'Kasongo hapa! 🏆 Tunataka tournament? Niambie tu: "Kasongo tcr 8 players knockout"',
       language: 'sw',
       context: 'tournament_interest'
     },
     {
       keyword: 'match',
-      response: 'Kila hapa! ⚽ Nani anataka kucheza? Nitakuunganisha na opponent!',
+      response: 'Kasongo hapa! ⚽ Nani anataka kucheza? Nitakuunganisha na opponent!',
       language: 'sw',
       context: 'match_interest'
     },
     {
       keyword: 'score',
-      response: 'Kila hapa! 📊 Karibu kurekodi matokeo: .pvpscores @player1 vs @player2 3:1',
+      response: 'Kasongo hapa! 📊 Karibu kurekodi matokeo: .pvpscores @player1 vs @player2 3:1',
       language: 'sw',
       context: 'score_submission'
     },
     {
       keyword: 'leaderboard',
-      response: 'Kila hapa! 📈 Karibu kuona ranking: .pvplb',
+      response: 'Kasongo hapa! 📈 Karibu kuona ranking: .pvplb',
       language: 'sw',
       context: 'stats_interest'
     },
     // English patterns
     {
       keyword: 'friendly',
-      response: 'Kila here! 🎮 Want a friendly match? I\'ll connect you with active players!',
+      response: 'Kasongo here! 🎮 Want a friendly match? I\'ll connect you with active players!',
       language: 'en',
       context: 'friendly_request'
     },
     {
       keyword: 'tournament',
-      response: 'Kila here! 🏆 Want a tournament? Just say: "Kila tcr 8 players knockout"',
+      response: 'Kasongo here! 🏆 Want a tournament? Just say: "Kasongo tcr 8 players knockout"',
       language: 'en',
       context: 'tournament_interest'
     },
     {
       keyword: 'match',
-      response: 'Kila here! ⚽ Who wants to play? I\'ll find you an opponent!',
+      response: 'Kasongo here! ⚽ Who wants to play? I\'ll find you an opponent!',
       language: 'en',
       context: 'match_interest'
     },
     {
       keyword: 'score',
-      response: 'Kila here! 📊 Record your result: .pvpscores @player1 vs @player2 3:1',
+      response: 'Kasongo here! 📊 Record your result: .pvpscores @player1 vs @player2 3:1',
       language: 'en',
       context: 'score_submission'
     },
     {
       keyword: 'leaderboard',
-      response: 'Kila here! 📈 Check rankings: .pvplb',
+      response: 'Kasongo here! 📈 Check rankings: .pvplb',
       language: 'en',
       context: 'stats_interest'
     }
@@ -247,31 +247,31 @@ class ChatFlowAnalyzer {
 
     if (topics.includes('friendly')) {
       return language === 'sw' 
-        ? 'Kila hapa! 🎮 Karibu kuomba friendly match: .request'
-        : 'Kila here! 🎮 Request a friendly match: .request';
+        ? 'Kasongo hapa! 🎮 Karibu kuomba friendly match: .request'
+        : 'Kasongo here! 🎮 Request a friendly match: .request';
     }
 
     if (topics.includes('tournament')) {
       return language === 'sw'
-        ? 'Kila hapa! 🏆 Tunataka tournament? .tcr "jina" se 8'
-        : 'Kila here! 🏆 Want a tournament? .tcr "name" se 8';
+        ? 'Kasongo hapa! 🏆 Tunataka tournament? .tcr "jina" se 8'
+        : 'Kasongo here! 🏆 Want a tournament? .tcr "name" se 8';
     }
 
     if (topics.includes('score')) {
       return language === 'sw'
-        ? 'Kila hapa! 📊 Rekodi matokeo: .pvpscores @player1 vs @player2 3:1'
-        : 'Kila here! 📊 Record score: .pvpscores @player1 vs @player2 3:1';
+        ? 'Kasongo hapa! 📊 Rekodi matokeo: .pvpscores @player1 vs @player2 3:1'
+        : 'Kasongo here! 📊 Record score: .pvpscores @player1 vs @player2 3:1';
     }
 
     if (topics.includes('leaderboard')) {
       return language === 'sw'
-        ? 'Kila hapa! 📈 Tazama ranking: .pvplb'
-        : 'Kila here! 📈 Check ranking: .pvplb';
+        ? 'Kasongo hapa! 📈 Tazama ranking: .pvplb'
+        : 'Kasongo here! 📈 Check ranking: .pvplb';
     }
 
     return language === 'sw'
-      ? 'Kila hapa! ⚽ Karibu kucheza! Nini unataka?'
-      : 'Kila here! ⚽ Ready to play! What do you want?';
+      ? 'Kasongo hapa! ⚽ Karibu kucheza! Nini unataka?'
+      : 'Kasongo here! ⚽ Ready to play! What do you want?';
   }
 
   // Reset group flow (for testing)

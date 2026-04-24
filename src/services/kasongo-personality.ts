@@ -15,22 +15,47 @@ interface KilaContext {
 }
 
 class KilaPersonality {
-  private name: string = process.env.AI_NAME || 'Kila';
+  private name: string = process.env.AI_NAME || 'Kasongo';
   private personality: string = process.env.AI_PERSONALITY || 'friendly_coach';
+  private creator: string = 'Mido D3V';
+
+  // Battery/limit messages when rate limited
+  private batteryMessages = {
+    sw: [
+      '🔋 Kasongo ana battery iliyofa! Karibu kesho! 😴',
+      '⚡ Oops! Kasongo ana power outage! Rudi kesho! 🔌',
+      '🪫 Kasongo ana battery 0%! Karibu kesho rafiki! 😅',
+      '💤 Kasongo amechoka! Karibu kesho! Pole pole! 🛌',
+      '🔴 Kasongo ana red light! Karibu kesho! 🚨',
+      '⏰ Kasongo ana siesta time! Karibu kesho! 😴',
+      '🌙 Kasongo amekufa kwa sasa! Karibu kesho! 🌙',
+      '🔋 Kasongo ana battery low! Karibu kesho! ⚠️'
+    ],
+    en: [
+      '🔋 Kasongo\'s battery is dead! See you tomorrow! 😴',
+      '⚡ Oops! Kasongo has a power outage! Come back tomorrow! 🔌',
+      '🪫 Kasongo\'s battery is 0%! See you tomorrow buddy! 😅',
+      '💤 Kasongo is tired! See you tomorrow! Pole pole! 🛌',
+      '🔴 Kasongo has a red light! See you tomorrow! 🚨',
+      '⏰ Kasongo is taking a siesta! See you tomorrow! 😴',
+      '🌙 Kasongo is sleeping now! See you tomorrow! 🌙',
+      '🔋 Kasongo\'s battery is low! See you tomorrow! ⚠️'
+    ]
+  };
 
   // Greetings in different languages
   private greetings = {
     sw: [
-      'Kila hapa! 🎮',
-      'Habari! Kila hapa! ⚽',
-      'Jambo! Kila ready! 🏆',
-      'Salaam! Kila hapa! 💪'
+      'Kasongo hapa! 🎮',
+      'Habari! Kasongo hapa! ⚽',
+      'Jambo! Kasongo ready! 🏆',
+      'Salaam! Kasongo hapa! 💪'
     ],
     en: [
-      'Kila here! 🎮',
-      'Hey! Kila ready! ⚽',
-      'What\'s up! Kila here! 🏆',
-      'Yo! Kila ready! 💪'
+      'Kasongo here! 🎮',
+      'Hey! Kasongo ready! ⚽',
+      'What\'s up! Kasongo here! 🏆',
+      'Yo! Kasongo ready! 💪'
     ]
   };
 
@@ -40,14 +65,14 @@ class KilaPersonality {
       'Karibu wote! Tunataka kucheza? 🎮',
       'Hii ni saa ya kucheza! ⚽',
       'Nani anataka tournament? 🏆',
-      'Wacha tuanze! Kila ready! 💪',
+      'Wacha tuanze! Kasongo ready! 💪',
       'Sasa ni wakati wa kucheza! 🔥'
     ],
     en: [
       'Everyone! Ready to play? 🎮',
       'It\'s game time! ⚽',
       'Who wants a tournament? 🏆',
-      'Let\'s go! Kila ready! 💪',
+      'Let\'s go! Kasongo ready! 💪',
       'Time to play! 🔥'
     ]
   };
@@ -143,9 +168,22 @@ class KilaPersonality {
       // Get group language
       const language = chatFlowAnalyzer.getGroupLanguage(context.groupJid);
 
-      // Check if message mentions Kila
-      if (!context.messageText.toLowerCase().includes('kila')) {
+      // Check if message mentions Kasongo
+      if (!context.messageText.toLowerCase().includes('kasongo')) {
         return null; // Don't respond unless mentioned
+      }
+
+      // Check for specific requests
+      const lowerText = context.messageText.toLowerCase();
+
+      // Handle "create challenge" request
+      if (lowerText.includes('challenge') || lowerText.includes('changamoto')) {
+        return this.handleChallengeRequest(context.groupJid, language);
+      }
+
+      // Handle "friendly match" request
+      if (lowerText.includes('friendly') || lowerText.includes('kucheza')) {
+        return await this.handleFriendlyRequest(context.groupJid, language);
       }
 
       // Try to respond naturally
@@ -163,6 +201,47 @@ class KilaPersonality {
     } catch (error) {
       console.error('Error processing message:', error);
       return null;
+    }
+  }
+
+  // Handle challenge creation request
+  private handleChallengeRequest(groupJid: string, language: 'en' | 'sw' | 'mixed'): string {
+    const lang = language === 'mixed' ? (Math.random() > 0.5 ? 'sw' : 'en') : language;
+
+    if (lang === 'sw') {
+      return `${this.getGreeting('sw')}\n\n🎯 *Karibu kuunda challenge!*\n\nNini aina ya challenge?\n1️⃣ Friendly match - .request\n2️⃣ Tournament - .tcr "jina" se 8\n3️⃣ Daily challenge - .dc\n\nNiambie tu!`;
+    } else {
+      return `${this.getGreeting('en')}\n\n🎯 *Let's create a challenge!*\n\nWhat type?\n1️⃣ Friendly match - .request\n2️⃣ Tournament - .tcr "name" se 8\n3️⃣ Daily challenge - .dc\n\nJust tell me!`;
+    }
+  }
+
+  // Handle friendly match request with active player tagging
+  private async handleFriendlyRequest(groupJid: string, language: 'en' | 'sw' | 'mixed'): Promise<string> {
+    const lang = language === 'mixed' ? (Math.random() > 0.5 ? 'sw' : 'en') : language;
+
+    try {
+      // Get active players from chat flow
+      const flow = chatFlowAnalyzer.getAllFlows().get(groupJid);
+      if (!flow || flow.activeUsers.size === 0) {
+        return lang === 'sw'
+          ? `${this.getGreeting('sw')}\n\n⚽ Hakuna wachezaji wenye nguvu sasa. Karibu baadaye!`
+          : `${this.getGreeting('en')}\n\n⚽ No active players right now. Come back later!`;
+      }
+
+      // Get top 5 active players
+      const activePlayersList = Array.from(flow.activeUsers).slice(0, 5);
+      const playerMentions = activePlayersList.map(jid => `@${formatJid(jid)}`).join(' ');
+
+      if (lang === 'sw') {
+        return `${this.getGreeting('sw')}\n\n⚽ *Friendly Match Challenge!*\n\n${playerMentions}\n\nNani anataka kucheza friendly match? 🎮\n\nKaribu: .request`;
+      } else {
+        return `${this.getGreeting('en')}\n\n⚽ *Friendly Match Challenge!*\n\n${playerMentions}\n\nWho wants a friendly match? 🎮\n\nJoin: .request`;
+      }
+    } catch (error) {
+      console.error('Error handling friendly request:', error);
+      return lang === 'sw'
+        ? `${this.getGreeting('sw')}\n\n⚽ Karibu kuomba friendly match: .request`
+        : `${this.getGreeting('en')}\n\n⚽ Request a friendly match: .request`;
     }
   }
 
@@ -368,11 +447,19 @@ class KilaPersonality {
   }
 
   // Get personality info
-  getInfo(): { name: string; personality: string } {
+  getInfo(): { name: string; personality: string; creator: string } {
     return {
       name: this.name,
-      personality: this.personality
+      personality: this.personality,
+      creator: this.creator
     };
+  }
+
+  // Get battery/limit message
+  getBatteryMessage(language: 'en' | 'sw' | 'mixed' = 'mixed'): string {
+    const lang = language === 'mixed' ? (Math.random() > 0.5 ? 'sw' : 'en') : language;
+    const messages = this.batteryMessages[lang];
+    return messages[Math.floor(Math.random() * messages.length)];
   }
 }
 

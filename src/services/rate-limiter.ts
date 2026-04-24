@@ -107,6 +107,19 @@ class RateLimiter {
     ];
     return messages[Math.floor(Math.random() * messages.length)];
   }
+
+  // Get Kasongo battery message (when limit reached)
+  async getKasongoMessage(language: 'en' | 'sw' | 'mixed' = 'mixed'): Promise<string> {
+    try {
+      const { kasongoPersonality } = await import('./kasongo-personality');
+      return kasongoPersonality.getBatteryMessage(language);
+    } catch (error) {
+      // Fallback if Kasongo not available
+      return language === 'sw' 
+        ? '🔋 Kasongo ana battery iliyofa! Karibu kesho! 😴'
+        : '🔋 Kasongo\'s battery is dead! See you tomorrow! 😴';
+    }
+  }
 }
 
 export const rateLimiter = new RateLimiter();
