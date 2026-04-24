@@ -161,6 +161,29 @@ export class MessageHandler {
                     return;
                 }
 
+                // Check for Kasongo mention (AI coach)
+                if (text && text.toLowerCase().includes('kasongo')) {
+                    try {
+                        const { kasongoPersonality } = await import('../services/kasongo-personality');
+                        const { chatFlowAnalyzer } = await import('../services/chat-flow-analyzer');
+                        
+                        const language = chatFlowAnalyzer.getGroupLanguage(jid);
+                        const response = await kasongoPersonality.processMessage({
+                            groupJid: jid,
+                            senderJid,
+                            messageText: text,
+                            language
+                        });
+
+                        if (response) {
+                            await waClient.sendMessage(jid, response);
+                        }
+                    } catch (error) {
+                        console.error('Error processing Kasongo message:', error);
+                    }
+                    // Don't return - allow command processing too
+                }
+
                 // Check if it's a command
                 const command = parseCommand(text);
 

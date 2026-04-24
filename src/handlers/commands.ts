@@ -1344,6 +1344,9 @@ registerCommand({
 
         // Record the match as pending
         const { pvpManager } = await import('../services/pvp-manager');
+        const { kasongoPersonality } = await import('../services/kasongo-personality');
+        const { chatFlowAnalyzer } = await import('../services/chat-flow-analyzer');
+        
         const result = await pvpManager.recordMatch(
             player1Jid,
             player2Jid,
@@ -1353,7 +1356,25 @@ registerCommand({
             context.hasImage
         );
 
-        await waClient.sendMessage(context.jid, result);
+        // Get player names
+        const player1User = userOps.get(player1Jid);
+        const player2User = userOps.get(player2Jid);
+        const player1Name = player1User?.name || formatJid(player1Jid);
+        const player2Name = player2User?.name || formatJid(player2Jid);
+
+        // Get group language
+        const language = chatFlowAnalyzer.getGroupLanguage(context.jid);
+
+        // Add Kasongo roasting/compliments
+        const scoreStr = `${player1Score}:${player2Score}`;
+        const kasongoResponse = kasongoPersonality.respondToMatchResultWithRoast(
+          player1Name,
+          player2Name,
+          scoreStr,
+          language
+        );
+
+        await waClient.sendMessage(context.jid, kasongoResponse);
     },
 });
 

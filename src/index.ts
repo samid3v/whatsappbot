@@ -66,6 +66,31 @@ async function main() {
             friendlyRequestManager.cleanup?.();
         });
 
+        // Kasongo engagement - every 2 hours, engage quiet groups
+        cron.schedule('0 */2 * * *', async () => {
+            try {
+                console.log('🤖 Kasongo: Checking for quiet groups...');
+                const { kasongoPersonality } = await import('./services/kasongo-personality');
+                const { chatFlowAnalyzer } = await import('./services/chat-flow-analyzer');
+                
+                // Get all tracked groups
+                const allFlows = chatFlowAnalyzer.getAllFlows();
+                for (const [groupJid] of allFlows) {
+                    if (kasongoPersonality.isRoomQuiet(groupJid)) {
+                        const message = await kasongoPersonality.engageQuietGroup(groupJid);
+                        try {
+                            await waClient.sendMessage(groupJid, message);
+                            console.log(`🤖 Kasongo: Engaged quiet group ${groupJid}`);
+                        } catch (error) {
+                            console.error(`Error sending Kasongo message to ${groupJid}:`, error);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error in Kasongo engagement task:', error);
+            }
+        });
+
         // Daily stats reset (optional)
         cron.schedule('0 0 * * *', async () => {
             console.log('🌟 Running daily tasks...');
