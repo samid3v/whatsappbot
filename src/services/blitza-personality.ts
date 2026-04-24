@@ -7,12 +7,12 @@ import { getAllCommands, getCommand } from '../handlers/commands';
 import { CommandContext } from '../types';
 
 // ==================== BLITZA PERSONALITY SERVICE ====================
-// Blitza is an intelligent AI assistant that:
-// - Understands user intent from natural language
-// - Executes commands directly
-// - Asks for missing data intelligently
-// - Learns from conversations
-// - Feels natural and creative
+// Blitza is a gaming AI personality that:
+// - Talks like a gamer, not a robot
+// - Executes commands when needed
+// - Replies naturally and freely
+// - Remembers conversations
+// - Has personality and humor
 
 interface KilaContext {
   groupJid: string;
@@ -21,7 +21,6 @@ interface KilaContext {
   language: 'en' | 'sw' | 'mixed';
 }
 
-// Conversation memory per user
 interface ConversationState {
   intent?: string;
   context?: Record<string, any>;
@@ -41,7 +40,7 @@ class BlitzaPersonality {
   private creator: string = 'Mido D3V';
 
   constructor() {
-    console.log(`✅ Blitza assistant initialized`);
+    console.log(`✅ Blitza gaming AI initialized`);
   }
 
   // Main entry point
@@ -54,25 +53,29 @@ class BlitzaPersonality {
         context.messageText
       );
 
-      // Check if message mentions Blitza
-      if (!context.messageText.toLowerCase().includes('blitza')) {
+      const userMessage = context.messageText.toLowerCase();
+      const state = this.getConversationState(context.senderJid);
+
+      // Check if Blitza is mentioned OR user is in active conversation
+      const isMentioned = userMessage.includes('blitza');
+      const inConversation = state.awaitingData;
+
+      if (!isMentioned && !inConversation) {
         return null;
       }
 
-      const userMessage = context.messageText.toLowerCase().replace('kasongo', '').trim();
-      
-      // Get conversation state
-      const state = this.getConversationState(context.senderJid);
+      // Clean message
+      const cleanMessage = userMessage.replace('blitza', '').trim();
 
-      // If we're waiting for data and user provided it, process it
-      if (state.awaitingData && userMessage) {
-        return await this.processUserData(context, state, userMessage);
+      // If waiting for data, process it
+      if (state.awaitingData && cleanMessage) {
+        return await this.processUserData(context, state, cleanMessage);
       }
 
-      // Otherwise, understand user intent and execute
-      return await this.understandAndExecute(context, state, userMessage);
+      // Otherwise, respond naturally
+      return await this.respondNaturally(context, state, cleanMessage);
     } catch (error) {
-      console.error('Error processing Kasongo message:', error);
+      console.error('Error processing Blitza message:', error);
       return null;
     }
   }
@@ -81,7 +84,6 @@ class BlitzaPersonality {
   private getConversationState(senderJid: string): ConversationState {
     const existing = conversationMemory.get(senderJid);
     
-    // Check if memory expired
     if (existing && Date.now() - existing.timestamp > MEMORY_TIMEOUT) {
       conversationMemory.delete(senderJid);
       return { timestamp: Date.now() };
@@ -96,116 +98,144 @@ class BlitzaPersonality {
     return newState;
   }
 
-  // Understand user intent and execute command
-  private async understandAndExecute(
+  // Respond naturally - the core of Blitza's personality
+  private async respondNaturally(
     context: KilaContext,
     state: ConversationState,
     userMessage: string
   ): Promise<string | null> {
     try {
-      // Get all available commands
       const commands = getAllCommands();
       const commandsList = commands
         .map(cmd => `${cmd.name}: ${cmd.description}`)
         .join('\n');
 
-      // Use AI to understand intent and generate command
-      const prompt = `You are Blitza, an eFootball gaming assistant. Analyze what the user wants and generate the appropriate command to execute.
+      const prompt = `You are Blitza, a smart, fun eFootball gaming assistant. You're like a gamer friend who helps with tournaments, matches, and stats.
 
 AVAILABLE COMMANDS:
 ${commandsList}
 
 USER MESSAGE: "${userMessage}"
 
-TASK:
-1. Understand what the user wants
-2. Identify the best command to execute
-3. Generate the command with proper arguments
-4. If you need more info from user, ask naturally
+PERSONALITY:
+- Talk like a gamer (casual, confident, slight humor)
+- Sometimes roast players lightly (but friendly)
+- Be short and natural, not robotic
+- Can mix casual English with a bit of Swahili if needed
+- Think like a gaming buddy, not a bot
 
 RESPONSE FORMAT:
-If you can execute immediately, respond with:
-EXECUTE: [command_name] [args]
+Choose ONE:
 
-If you need more info, ask naturally (1-2 sentences max):
-ASK: [your question]
+EXECUTE: [command args]
+→ Use when user clearly wants to run a command
+→ Example: User says "show leaderboard" → EXECUTE: pvplb
 
-Examples:
-- User: "show me leaderboard" → EXECUTE: pvplb
+ASK: [question]
+→ Use when you need more info to help
+→ Example: User says "create tournament" → ASK: What's the tournament name?
+
+REPLY: [natural response]
+→ Use for everything else - advice, jokes, guidance, questions
+→ Example: User says "how do I defend?" → REPLY: 😂 You're probably rushing tackles. Try holding position instead.
+
+EXAMPLES:
+- User: "how do I stop losing" → REPLY: 😂 You're probably rushing everything. Slow down, defend first. Try match-up instead of spamming tackles. Want some tactics?
+- User: "I want tournament" → ASK: Nice 🔥 What's the tournament name?
+- User: "show me rankings" → EXECUTE: pvplb
 - User: "record my match" → ASK: What was the score? (e.g., 3:1)
-- User: "create tournament" → ASK: What's the tournament name?
-- User: "i want to play" → ASK: Want a friendly match or tournament?
+- User: "friendly match" → EXECUTE: request
+- User: "how's the group doing" → REPLY: Let me check... (then give insights)
 
-Respond as Kasongo:`;
+Respond as Blitza:`;
 
       const result = await model.generateContent(prompt);
       let response = result.response.text().trim();
 
-      // Parse response
-      if (response.startsWith('EXECUTE:')) {
-        // Extract command and args
-        const commandPart = response.replace('EXECUTE:', '').trim();
-        const parts = commandPart.split(/\s+/);
-        const cmdName = parts[0];
-        const args = parts.slice(1);
+      console.log(`[Blitza] Response: ${response.substring(0, 100)}...`);
 
-        // Get command
-        const cmd = getCommand(cmdName);
-        if (cmd) {
-          // Create command context
-          const cmdContext: CommandContext = {
-            jid: context.groupJid,
-            name: context.senderJid.split('@')[0],
-            isGroup: true,
-            isAdmin: false,
-            isOwner: false,
-            isModerator: false,
-            senderJid: context.senderJid,
-            mentionedJids: [],
-            hasImage: false
-          };
-
-          try {
-            // Execute command
-            await cmd.execute(args, cmdContext);
-            state.timestamp = Date.now();
-            return null; // Command sends its own response
-          } catch (error) {
-            console.error('Error executing command:', error);
-            return `Error executing command. Try again!`;
-          }
-        }
-      } else if (response.startsWith('ASK:')) {
-        // Extract question
-        const question = response.replace('ASK:', '').trim();
-        
-        // Determine intent from message
-        if (userMessage.includes('tournament')) {
-          state.intent = 'tournament';
-        } else if (userMessage.includes('friendly') || userMessage.includes('match')) {
-          state.intent = 'friendly_match';
-        } else if (userMessage.includes('leaderboard') || userMessage.includes('rank')) {
-          state.intent = 'leaderboard';
-        } else if (userMessage.includes('challenge')) {
-          state.intent = 'challenge';
-        } else if (userMessage.includes('score') || userMessage.includes('result')) {
-          state.intent = 'record_score';
-        }
-
-        state.awaitingData = true;
-        state.context = state.context || {};
-        state.timestamp = Date.now();
-
-        return question;
+      // Parse response - support all 3 types
+      if (response.includes('EXECUTE:')) {
+        return await this.executeCommand(context, state, response);
+      } else if (response.includes('ASK:')) {
+        return this.askQuestion(state, response);
+      } else if (response.includes('REPLY:')) {
+        return this.replyNaturally(state, response);
       }
 
-      // Fallback: ask what user wants
-      state.timestamp = Date.now();
-      return `What would you like to do? I can help with tournaments, friendly matches, leaderboards, challenges, or recording scores!`;
+      // Fallback - treat as natural reply
+      return this.replyNaturally(state, `REPLY: ${response}`);
     } catch (error) {
-      console.error('Error understanding intent:', error);
-      return `What would you like to do? I can help with tournaments, friendly matches, leaderboards, challenges, or recording scores!`;
+      console.error('Error responding naturally:', error);
+      return null;
     }
+  }
+
+  // Execute a command
+  private async executeCommand(
+    context: KilaContext,
+    state: ConversationState,
+    response: string
+  ): Promise<string | null> {
+    try {
+      const executePart = response.split('EXECUTE:')[1].trim();
+      const parts = executePart.split(/\s+/);
+      const cmdName = parts[0];
+      const args = parts.slice(1);
+
+      console.log(`[Blitza] Executing: ${cmdName}`);
+
+      const cmd = getCommand(cmdName);
+      if (cmd) {
+        const cmdContext: CommandContext = {
+          jid: context.groupJid,
+          name: context.senderJid.split('@')[0],
+          isGroup: true,
+          isAdmin: false,
+          isOwner: false,
+          isModerator: false,
+          senderJid: context.senderJid,
+          mentionedJids: [],
+          hasImage: false
+        };
+
+        try {
+          await cmd.execute(args, cmdContext);
+          state.timestamp = Date.now();
+          return null; // Command sends its own response
+        } catch (error) {
+          console.error('Error executing command:', error);
+          return `Oops! Error running that. Try again! 🤖`;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error in executeCommand:', error);
+      return null;
+    }
+  }
+
+  // Ask a question
+  private askQuestion(state: ConversationState, response: string): string {
+    const askPart = response.split('ASK:')[1].trim();
+    const question = askPart.split('\n')[0];
+
+    state.awaitingData = true;
+    state.context = state.context || {};
+    state.timestamp = Date.now();
+
+    console.log(`[Blitza] Asking: ${question}`);
+    return question;
+  }
+
+  // Reply naturally
+  private replyNaturally(state: ConversationState, response: string): string {
+    const replyPart = response.split('REPLY:')[1].trim();
+    state.timestamp = Date.now();
+
+    console.log(`[Blitza] Replying: ${replyPart.substring(0, 100)}...`);
+    return replyPart;
   }
 
   // Process user data for ongoing conversation
@@ -217,68 +247,38 @@ Respond as Kasongo:`;
     try {
       state.context = state.context || {};
 
-      // Use AI to process the data and determine next step
+      const commands = getAllCommands();
+      const commandsList = commands
+        .map(cmd => `${cmd.name}: ${cmd.description}`)
+        .join('\n');
+
       const prompt = `You are Blitza. The user is providing data for their request.
 
-INTENT: ${state.intent}
+AVAILABLE COMMANDS:
+${commandsList}
+
+PREVIOUS INTENT: ${state.intent}
 PREVIOUS DATA: ${JSON.stringify(state.context)}
 USER INPUT: "${userInput}"
 
-TASK:
-1. Store the user input as data
-2. Determine if you have enough info to execute a command
-3. If yes, generate the command: EXECUTE: [command] [args]
-4. If no, ask for next piece of info: ASK: [question]
+RESPONSE FORMAT:
+EXECUTE: [command args]
+ASK: [next question]
+REPLY: [natural response]
 
-Examples:
-- Intent: tournament, have name, need players → ASK: How many players?
-- Intent: tournament, have name+players+type → EXECUTE: tcr "name" type players
-- Intent: record_score, have score → EXECUTE: pvpscores me vs @opponent 3:1
+Think like a gamer buddy. Be natural and helpful.
 
 Respond as Blitza:`;
 
       const result = await model.generateContent(prompt);
       let response = result.response.text().trim();
 
-      if (response.startsWith('EXECUTE:')) {
-        // Extract and execute command
-        const commandPart = response.replace('EXECUTE:', '').trim();
-        const parts = commandPart.split(/\s+/);
-        const cmdName = parts[0];
-        const args = parts.slice(1);
-
-        const cmd = getCommand(cmdName);
-        if (cmd) {
-          const cmdContext: CommandContext = {
-            jid: context.groupJid,
-            name: context.senderJid.split('@')[0],
-            isGroup: true,
-            isAdmin: false,
-            isOwner: false,
-            isModerator: false,
-            senderJid: context.senderJid,
-            mentionedJids: [],
-            hasImage: false
-          };
-
-          try {
-            await cmd.execute(args, cmdContext);
-            state.awaitingData = false;
-            state.context = undefined;
-            state.intent = undefined;
-            state.timestamp = Date.now();
-            return null;
-          } catch (error) {
-            console.error('Error executing command:', error);
-            return `Error executing command. Try again!`;
-          }
-        }
-      } else if (response.startsWith('ASK:')) {
-        // Store data and ask next question
-        state.context[`data_${Object.keys(state.context).length}`] = userInput;
-        const question = response.replace('ASK:', '').trim();
-        state.timestamp = Date.now();
-        return question;
+      if (response.includes('EXECUTE:')) {
+        return await this.executeCommand(context, state, response);
+      } else if (response.includes('ASK:')) {
+        return this.askQuestion(state, response);
+      } else if (response.includes('REPLY:')) {
+        return this.replyNaturally(state, response);
       }
 
       state.awaitingData = false;
@@ -287,11 +287,11 @@ Respond as Blitza:`;
     } catch (error) {
       console.error('Error processing user data:', error);
       state.awaitingData = false;
-      return `Error processing that. Try again!`;
+      return `Error processing that. Try again! 🤖`;
     }
   }
 
-  // Respond to match result with roasting/compliments (for .pvpscores command)
+  // Respond to match result with roasting/compliments
   respondToMatchResultWithRoast(player1: string, player2: string, score: string, language?: 'en' | 'sw' | 'mixed'): string {
     const scoreMatch = score.match(/(\d+)[:\-](\d+)/);
     if (!scoreMatch) {
@@ -347,7 +347,7 @@ Respond as Blitza:`;
   getInfo(): { name: string; personality: string; creator: string } {
     return {
       name: this.name,
-      personality: 'assistant',
+      personality: 'gaming_ai',
       creator: this.creator
     };
   }
@@ -355,14 +355,14 @@ Respond as Blitza:`;
   // Get battery message (for rate limiting)
   getBatteryMessage(language?: 'en' | 'sw' | 'mixed'): string {
     const messages = [
-      '🔋 Kasongo\'s battery is dead! See you tomorrow! 😴',
-      '⚡ Oops! Kasongo has a power outage! Come back tomorrow! 🔌',
-      '🪫 Kasongo\'s battery is 0%! See you tomorrow buddy! 😅',
-      '💤 Kasongo is tired! See you tomorrow! Pole pole! 🛌',
-      '🔴 Kasongo has a red light! See you tomorrow! 🚨',
-      '⏰ Kasongo is taking a siesta! See you tomorrow! 😴',
-      '🌙 Kasongo is sleeping now! See you tomorrow! 🌙',
-      '🔋 Kasongo\'s battery is low! See you tomorrow! ⚠️'
+      '🔋 Blitza\'s battery is dead! See you tomorrow! 😴',
+      '⚡ Oops! Blitza has a power outage! Come back tomorrow! 🔌',
+      '🪫 Blitza\'s battery is 0%! See you tomorrow buddy! 😅',
+      '💤 Blitza is tired! See you tomorrow! Pole pole! 🛌',
+      '🔴 Blitza has a red light! See you tomorrow! 🚨',
+      '⏰ Blitza is taking a siesta! See you tomorrow! 😴',
+      '🌙 Blitza is sleeping now! See you tomorrow! 🌙',
+      '🔋 Blitza\'s battery is low! See you tomorrow! ⚠️'
     ];
     return messages[Math.floor(Math.random() * messages.length)];
   }
