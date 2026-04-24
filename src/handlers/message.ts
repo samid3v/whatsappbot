@@ -162,13 +162,13 @@ export class MessageHandler {
                 }
 
                 // Check for Kasongo mention (AI coach)
-                if (text && text.toLowerCase().includes('kasongo')) {
+                if (text && text.toLowerCase().includes('blitza')) {
                     try {
-                        const { kasongoPersonality } = await import('../services/kasongo-personality');
+                        const { blitzaPersonality } = await import('../services/blitza-personality');
                         const { chatFlowAnalyzer } = await import('../services/chat-flow-analyzer');
                         
                         const language = chatFlowAnalyzer.getGroupLanguage(jid);
-                        const response = await kasongoPersonality.processMessage({
+                        const response = await blitzaPersonality.processMessage({
                             groupJid: jid,
                             senderJid,
                             messageText: text,

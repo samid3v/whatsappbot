@@ -6,8 +6,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllCommands, getCommand } from '../handlers/commands';
 import { CommandContext } from '../types';
 
-// ==================== KASONGO PERSONALITY SERVICE ====================
-// Kasongo is an intelligent AI assistant that:
+// ==================== BLITZA PERSONALITY SERVICE ====================
+// Blitza is an intelligent AI assistant that:
 // - Understands user intent from natural language
 // - Executes commands directly
 // - Asks for missing data intelligently
@@ -36,12 +36,12 @@ const MEMORY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
-class KilaPersonality {
-  private name: string = 'Kasongo';
+class BlitzaPersonality {
+  private name: string = 'Blitza';
   private creator: string = 'Mido D3V';
 
   constructor() {
-    console.log(`✅ Kasongo assistant initialized`);
+    console.log(`✅ Blitza assistant initialized`);
   }
 
   // Main entry point
@@ -110,7 +110,7 @@ class KilaPersonality {
         .join('\n');
 
       // Use AI to understand intent and generate command
-      const prompt = `You are Kasongo, an eFootball gaming assistant. Analyze what the user wants and generate the appropriate command to execute.
+      const prompt = `You are Blitza, an eFootball gaming assistant. Analyze what the user wants and generate the appropriate command to execute.
 
 AVAILABLE COMMANDS:
 ${commandsList}
@@ -218,7 +218,7 @@ Respond as Kasongo:`;
       state.context = state.context || {};
 
       // Use AI to process the data and determine next step
-      const prompt = `You are Kasongo. The user is providing data for their request.
+      const prompt = `You are Blitza. The user is providing data for their request.
 
 INTENT: ${state.intent}
 PREVIOUS DATA: ${JSON.stringify(state.context)}
@@ -235,7 +235,7 @@ Examples:
 - Intent: tournament, have name+players+type → EXECUTE: tcr "name" type players
 - Intent: record_score, have score → EXECUTE: pvpscores me vs @opponent 3:1
 
-Respond as Kasongo:`;
+Respond as Blitza:`;
 
       const result = await model.generateContent(prompt);
       let response = result.response.text().trim();
@@ -368,5 +368,5 @@ Respond as Kasongo:`;
   }
 }
 
-export const kasongoPersonality = new KilaPersonality();
-export default kasongoPersonality;
+export const blitzaPersonality = new BlitzaPersonality();
+export default blitzaPersonality;

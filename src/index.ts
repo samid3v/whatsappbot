@@ -69,25 +69,25 @@ async function main() {
         // Kasongo engagement - every 2 hours, engage quiet groups
         cron.schedule('0 */2 * * *', async () => {
             try {
-                console.log('🤖 Kasongo: Checking for quiet groups...');
-                const { kasongoPersonality } = await import('./services/kasongo-personality');
+                console.log('🤖 Blitza: Checking for quiet groups...');
+                const { blitzaPersonality } = await import('./services/blitza-personality');
                 const { chatFlowAnalyzer } = await import('./services/chat-flow-analyzer');
                 
                 // Get all tracked groups
                 const allFlows = chatFlowAnalyzer.getAllFlows();
                 for (const [groupJid] of allFlows) {
-                    if (kasongoPersonality.isRoomQuiet(groupJid)) {
-                        const message = await kasongoPersonality.engageQuietGroup(groupJid);
+                    if (blitzaPersonality.isRoomQuiet(groupJid)) {
+                        const message = await blitzaPersonality.engageQuietGroup(groupJid);
                         try {
                             await waClient.sendMessage(groupJid, message);
-                            console.log(`🤖 Kasongo: Engaged quiet group ${groupJid}`);
+                            console.log(`🤖 Blitza: Engaged quiet group ${groupJid}`);
                         } catch (error) {
-                            console.error(`Error sending Kasongo message to ${groupJid}:`, error);
+                            console.error(`Error sending Blitza message to ${groupJid}:`, error);
                         }
                     }
                 }
             } catch (error) {
-                console.error('Error in Kasongo engagement task:', error);
+                console.error('Error in Blitza engagement task:', error);
             }
         });
 

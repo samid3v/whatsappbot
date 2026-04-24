@@ -1344,7 +1344,7 @@ registerCommand({
 
         // Record the match as pending
         const { pvpManager } = await import('../services/pvp-manager');
-        const { kasongoPersonality } = await import('../services/kasongo-personality');
+        const { blitzaPersonality } = await import('../services/blitza-personality');
         const { chatFlowAnalyzer } = await import('../services/chat-flow-analyzer');
         
         const result = await pvpManager.recordMatch(
@@ -1365,16 +1365,16 @@ registerCommand({
         // Get group language
         const language = chatFlowAnalyzer.getGroupLanguage(context.jid);
 
-        // Add Kasongo roasting/compliments
+        // Add Blitza roasting/compliments
         const scoreStr = `${player1Score}:${player2Score}`;
-        const kasongoResponse = kasongoPersonality.respondToMatchResultWithRoast(
+        const blitzaResponse = blitzaPersonality.respondToMatchResultWithRoast(
           player1Name,
           player2Name,
           scoreStr,
           language
         );
 
-        await waClient.sendMessage(context.jid, kasongoResponse);
+        await waClient.sendMessage(context.jid, blitzaResponse);
     },
 });
 
