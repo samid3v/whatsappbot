@@ -54,8 +54,8 @@ class BlitzaPersonality {
         context.messageText
       );
 
-      // Check if message mentions Kasongo
-      if (!context.messageText.toLowerCase().includes('kasongo')) {
+      // Check if message mentions Blitza
+      if (!context.messageText.toLowerCase().includes('blitza')) {
         return null;
       }
 
