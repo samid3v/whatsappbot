@@ -9,7 +9,7 @@ export class RoleManager {
     setOwner(jid: string): void {
         this.ownerJid = jid;
         // Ensure owner exists in database
-        userOps.getOrCreate(jid, 'Bot Owner');
+        const { user } = userOps.getOrCreate(jid, 'Bot Owner');
         userOps.updateRole(jid, 'owner');
     }
 

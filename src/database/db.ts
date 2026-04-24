@@ -481,13 +481,15 @@ function findUserByJid(jid: string): any {
 // ==================== USER OPERATIONS ====================
 
 export const userOps = {
-  getOrCreate: (jid: string, name?: string): any => {
+  getOrCreate: (jid: string, name?: string): { user: any; isNew: boolean } => {
     let user = findUserByJid(jid);
+    let isNew = false;
     if (!user) {
       stmts.insertUser.run(jid, name || null);
       user = stmts.findUserExact.get(jid);
+      isNew = true;
     }
-    return user;
+    return { user, isNew };
   },
 
   get: (jid: string): any => {
@@ -528,7 +530,7 @@ export const userOps = {
   },
 
   incrementMutedMessageCount: (jid: string): number => {
-    userOps.getOrCreate(jid);
+    const { user } = userOps.getOrCreate(jid);
     stmts.incrementMutedMsgCount.run(jid);
     const row = stmts.getMutedMsgCount.get(jid) as any;
     return row?.muted_messages_count || 0;

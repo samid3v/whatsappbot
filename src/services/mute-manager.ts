@@ -16,7 +16,7 @@ export class MuteManager {
         console.log(`[muteUser] Attempting to mute jid=${jid}, phone=${phoneNumber}, duration=${durationMinutes}m`);
 
         // Ensure user exists in database first
-        const user = userOps.getOrCreate(jid);
+        const { user } = userOps.getOrCreate(jid);
         console.log(`[muteUser] User after getOrCreate:`, user ? `id=${user.id}, jid=${user.jid}, is_muted=${user.is_muted}` : 'null');
 
         // Calculate expiry time

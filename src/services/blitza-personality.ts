@@ -366,6 +366,61 @@ Respond as Blitza:`;
     ];
     return messages[Math.floor(Math.random() * messages.length)];
   }
+
+  // Welcome new user to group
+  async welcomeNewUser(groupJid: string, newUserJid: string, newUserName: string): Promise<string | null> {
+    try {
+      // Get frequent gamers from chat flow
+      const flow = chatFlowAnalyzer.getAllFlows().get(groupJid);
+      if (!flow || flow.activeUsers.size === 0) {
+        return null;
+      }
+
+      // Get top 5 active players (excluding the new user)
+      const activePlayersList = Array.from(flow.activeUsers)
+        .filter(jid => jid !== newUserJid)
+        .slice(0, 5);
+
+      if (activePlayersList.length === 0) {
+        return null;
+      }
+
+      const playerMentions = activePlayersList.map(jid => `@${formatJid(jid)}`).join(' ');
+
+      // Use AI to generate creative welcome message
+      const prompt = `You are Blitza, a fun gaming AI. A new player just joined the group!
+
+NEW PLAYER: ${newUserName}
+ACTIVE GAMERS TO TAG: ${playerMentions}
+
+Create a fun, engaging welcome message that:
+- Welcomes the newbie in a fun way (can roast them lightly, joke about them being new)
+- Tags the active gamers to play friendly matches with them
+- Makes it exciting and engaging
+- Be creative and funny - don't be robotic
+- Keep it short (2-3 sentences max)
+- Can use emojis
+
+Examples of tone:
+- "Fresh meat! 🔥 ${playerMentions} - we got a newbie to cook! Let's show them what real eFootball looks like 😂"
+- "Yo! New player alert! 🎮 ${playerMentions} - time to test this newbie's skills. Friendly matches incoming! 💪"
+- "Welcome to the arena! 🏆 ${playerMentions} - let's give our newbie a proper welcome... with some friendly roasting 😂"
+
+Respond as Blitza (just the message, no formatting):`;
+
+      const result = await model.generateContent(prompt);
+      let message = result.response.text().trim();
+
+      // Replace placeholder with actual mentions
+      message = message.replace(/\$\{playerMentions\}/g, playerMentions);
+
+      console.log(`[Blitza] Welcoming new user: ${newUserName}`);
+      return message;
+    } catch (error) {
+      console.error('Error welcoming new user:', error);
+      return null;
+    }
+  }
 }
 
 export const blitzaPersonality = new BlitzaPersonality();

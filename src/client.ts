@@ -210,7 +210,7 @@ export class WhatsAppClient extends EventEmitter {
               await this.sendMention(id, welcomeMsg, [participant.id]);
 
               // Create user in database
-              userOps.getOrCreate(participant.id, userName);
+              const { user, isNew } = userOps.getOrCreate(participant.id, userName);
 
               console.log(`[Welcome] New member joined: ${participant.id}`);
             } catch (e) {

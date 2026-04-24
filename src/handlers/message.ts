@@ -67,7 +67,20 @@ export class MessageHandler {
             try {
                 // Ensure user exists in database
                 const pushName = data.msg?.pushName || 'Unknown';
-                userOps.getOrCreate(senderJid, pushName);
+                const { user, isNew } = userOps.getOrCreate(senderJid, pushName);
+
+                // Welcome new user
+                if (isNew) {
+                    try {
+                        const { blitzaPersonality } = await import('../services/blitza-personality');
+                        const welcomeMessage = await blitzaPersonality.welcomeNewUser(jid, senderJid, pushName);
+                        if (welcomeMessage) {
+                            await waClient.sendMessage(jid, welcomeMessage);
+                        }
+                    } catch (error) {
+                        console.error('Error welcoming new user:', error);
+                    }
+                }
 
                 // Get user role
                 const userRole = await roleManager.getUserRole(senderJid);
