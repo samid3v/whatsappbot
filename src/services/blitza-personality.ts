@@ -370,54 +370,62 @@ Respond as Blitza:`;
   // Welcome new user to group
   async welcomeNewUser(groupJid: string, newUserJid: string, newUserName: string): Promise<string | null> {
     try {
+      console.log(`[Blitza] Welcoming new user: ${newUserName} (${newUserJid})`);
+
       // Get frequent gamers from chat flow
       const flow = chatFlowAnalyzer.getAllFlows().get(groupJid);
-      if (!flow || flow.activeUsers.size === 0) {
-        return null;
-      }
+      console.log(`[Blitza] Chat flow exists: ${!!flow}, active users: ${flow?.activeUsers.size || 0}`);
 
       // Get top 5 active players (excluding the new user)
-      const activePlayersList = Array.from(flow.activeUsers)
-        .filter(jid => jid !== newUserJid)
-        .slice(0, 5);
-
-      if (activePlayersList.length === 0) {
-        return null;
+      let activePlayersList: string[] = [];
+      if (flow && flow.activeUsers.size > 0) {
+        activePlayersList = Array.from(flow.activeUsers)
+          .filter(jid => jid !== newUserJid)
+          .slice(0, 5);
       }
 
-      const playerMentions = activePlayersList.map(jid => `@${formatJid(jid)}`).join(' ');
+      console.log(`[Blitza] Active players to tag: ${activePlayersList.length}`);
+
+      let playerMentions = '';
+      if (activePlayersList.length > 0) {
+        playerMentions = activePlayersList.map(jid => `@${formatJid(jid)}`).join(' ');
+        console.log(`[Blitza] Player mentions: ${playerMentions}`);
+      }
 
       // Use AI to generate creative welcome message
       const prompt = `You are Blitza, a fun gaming AI. A new player just joined the group!
 
 NEW PLAYER: ${newUserName}
-ACTIVE GAMERS TO TAG: ${playerMentions}
+${playerMentions ? `ACTIVE GAMERS TO TAG: ${playerMentions}` : 'NO ACTIVE GAMERS YET (but still welcome them!)'}
 
 Create a fun, engaging welcome message that:
 - Welcomes the newbie in a fun way (can roast them lightly, joke about them being new)
-- Tags the active gamers to play friendly matches with them
+${playerMentions ? `- Tags the active gamers: ${playerMentions} to play friendly matches with them` : '- Encourage them to start playing and making friends'}
 - Makes it exciting and engaging
 - Be creative and funny - don't be robotic
 - Keep it short (2-3 sentences max)
 - Can use emojis
 
 Examples of tone:
-- "Fresh meat! 🔥 ${playerMentions} - we got a newbie to cook! Let's show them what real eFootball looks like 😂"
-- "Yo! New player alert! 🎮 ${playerMentions} - time to test this newbie's skills. Friendly matches incoming! 💪"
-- "Welcome to the arena! 🏆 ${playerMentions} - let's give our newbie a proper welcome... with some friendly roasting 😂"
+${playerMentions ? `- "Fresh meat! 🔥 ${playerMentions} - we got a newbie to cook! Let's show them what real eFootball looks like 😂"` : `- "Welcome to the arena! 🏆 Fresh meat incoming! Let's show you what real eFootball looks like 😂"`}
 
 Respond as Blitza (just the message, no formatting):`;
 
+      console.log(`[Blitza] Generating welcome message...`);
       const result = await model.generateContent(prompt);
       let message = result.response.text().trim();
 
-      // Replace placeholder with actual mentions
-      message = message.replace(/\$\{playerMentions\}/g, playerMentions);
+      console.log(`[Blitza] Generated message: ${message}`);
 
-      console.log(`[Blitza] Welcoming new user: ${newUserName}`);
+      // Replace placeholder with actual mentions if any
+      if (playerMentions) {
+        message = message.replace(/\$\{playerMentions\}/g, playerMentions);
+      }
+
+      console.log(`[Blitza] Final welcome message: ${message}`);
       return message;
     } catch (error) {
-      console.error('Error welcoming new user:', error);
+      console.error('[Blitza] Error welcoming new user:', error);
       return null;
     }
   }
