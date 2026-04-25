@@ -112,7 +112,7 @@ class RateLimiter {
   async getBlitzaMessage(language: 'en' | 'sw' | 'mixed' = 'mixed'): Promise<string> {
     try {
       const { blitzaPersonality } = await import('./blitza-personality');
-      return blitzaPersonality.getBatteryMessage(language);
+      return blitzaPersonality.getBatteryMessage();
     } catch (error) {
       // Fallback if Blitza not available
       return language === 'sw' 

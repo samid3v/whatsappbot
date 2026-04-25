@@ -1370,8 +1370,7 @@ registerCommand({
         const blitzaResponse = blitzaPersonality.respondToMatchResultWithRoast(
           player1Name,
           player2Name,
-          scoreStr,
-          language
+          scoreStr
         );
 
         await waClient.sendMessage(context.jid, blitzaResponse);

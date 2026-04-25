@@ -73,9 +73,14 @@ export class MessageHandler {
                 if (isNew) {
                     try {
                         const { blitzaPersonality } = await import('../services/blitza-personality');
-                        const welcomeMessage = await blitzaPersonality.welcomeNewUser(jid, senderJid, pushName);
-                        if (welcomeMessage) {
-                            await waClient.sendMessage(jid, welcomeMessage);
+                        const welcomeData = await blitzaPersonality.welcomeNewUser(jid, senderJid, pushName);
+                        if (welcomeData) {
+                            // Use sendMention with proper mentions array for tagging
+                            if (welcomeData.mentionedJids.length > 0) {
+                                await waClient.sendMention(jid, welcomeData.message, welcomeData.mentionedJids);
+                            } else {
+                                await waClient.sendMessage(jid, welcomeData.message);
+                            }
                         }
                     } catch (error) {
                         console.error('Error welcoming new user:', error);
@@ -174,8 +179,9 @@ export class MessageHandler {
                     return;
                 }
 
-                // Check for Kasongo mention (AI coach)
-                if (text && text.toLowerCase().includes('blitza')) {
+                // Check for Blitza mention or gaming keywords (AI coach)
+                if (text && (text.toLowerCase().includes('blitza') || 
+                    ['friendly', 'match', 'play', 'tournament', 'code', 'anyone', 'challenge', 'squad', 'team', 'formation', 'tactics', 'analyze', 'review', 'lineup'].some(kw => text.toLowerCase().includes(kw)))) {
                     try {
                         const { blitzaPersonality } = await import('../services/blitza-personality');
                         const { chatFlowAnalyzer } = await import('../services/chat-flow-analyzer');
@@ -185,14 +191,15 @@ export class MessageHandler {
                             groupJid: jid,
                             senderJid,
                             messageText: text,
-                            language
+                            language,
+                            hasImage: data.hasImage
                         });
 
                         if (response) {
                             await waClient.sendMessage(jid, response);
                         }
                     } catch (error) {
-                        console.error('Error processing Kasongo message:', error);
+                        console.error('Error processing Blitza message:', error);
                     }
                     // Don't return - allow command processing too
                 }

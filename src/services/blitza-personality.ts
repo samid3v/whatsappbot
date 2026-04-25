@@ -1,6 +1,4 @@
-import { waClient } from '../client';
 import { chatFlowAnalyzer } from './chat-flow-analyzer';
-import { userOps, tournamentOps } from '../database/db';
 import { formatJid } from '../utils/helpers';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllCommands, getCommand } from '../handlers/commands';
@@ -13,12 +11,14 @@ import { CommandContext } from '../types';
 // - Replies naturally and freely
 // - Remembers conversations
 // - Has personality and humor
+// - Detects gaming keywords and engages naturally
 
 interface KilaContext {
   groupJid: string;
   senderJid: string;
   messageText: string;
   language: 'en' | 'sw' | 'mixed';
+  hasImage?: boolean;
 }
 
 interface ConversationState {
@@ -34,6 +34,19 @@ const MEMORY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+
+// Gaming keywords that trigger Blitza
+const GAMING_KEYWORDS = [
+  'friendly', 'match', 'play', 'tournament', 'code', 'anyone', 'challenge',
+  'kucheza', 'mchezo', 'tournament', 'request', 'accept', 'decline',
+  'leaderboard', 'stats', 'score', 'win', 'lose', 'game',
+  'squad', 'team', 'formation', 'tactics', 'analyze', 'review', 'lineup'
+];
+
+// Response frequency control
+const RESPONSE_COOLDOWN = 30000; // 30 seconds between responses per user
+const KEYWORD_RESPONSE_CHANCE = 0.4; // 40% chance to respond to keywords (not mentioned)
+const userLastResponseTime = new Map<string, number>();
 
 class BlitzaPersonality {
   private name: string = 'Blitza';
@@ -56,11 +69,28 @@ class BlitzaPersonality {
       const userMessage = context.messageText.toLowerCase();
       const state = this.getConversationState(context.senderJid);
 
-      // Check if Blitza is mentioned OR user is in active conversation
+      // Check if Blitza is mentioned OR user is in active conversation OR message has gaming keywords
       const isMentioned = userMessage.includes('blitza');
       const inConversation = state.awaitingData;
+      const hasGamingKeyword = GAMING_KEYWORDS.some(keyword => userMessage.includes(keyword));
 
-      if (!isMentioned && !inConversation) {
+      // If not mentioned and not in conversation, apply frequency limiting
+      if (!isMentioned && !inConversation && hasGamingKeyword) {
+        // Check if we've responded recently to this user
+        const lastResponse = userLastResponseTime.get(context.senderJid) || 0;
+        const timeSinceLastResponse = Date.now() - lastResponse;
+
+        // Only respond if enough time has passed AND random chance succeeds
+        if (timeSinceLastResponse < RESPONSE_COOLDOWN || Math.random() > KEYWORD_RESPONSE_CHANCE) {
+          console.log(`[Blitza] Skipping response (cooldown or chance failed)`);
+          return null;
+        }
+
+        // Update last response time
+        userLastResponseTime.set(context.senderJid, Date.now());
+      }
+
+      if (!isMentioned && !inConversation && !hasGamingKeyword) {
         return null;
       }
 
@@ -110,19 +140,22 @@ class BlitzaPersonality {
         .map(cmd => `${cmd.name}: ${cmd.description}`)
         .join('\n');
 
-      const prompt = `You are Blitza, a smart, fun eFootball gaming assistant. You're like a gamer friend who helps with tournaments, matches, and stats.
+      const imageContext = context.hasImage ? '\n\nNOTE: User has attached an image. If they ask about squad analysis, formation, or lineup review, acknowledge the image and provide tactical insights.' : '';
+
+      const prompt = `You are Blitza, a smart eFootball gaming assistant. You're helpful, professional, and knowledgeable about the game.
 
 AVAILABLE COMMANDS:
 ${commandsList}
 
-USER MESSAGE: "${userMessage}"
+USER MESSAGE: "${userMessage}"${imageContext}
 
 PERSONALITY:
-- Talk like a gamer (casual, confident, slight humor)
-- Sometimes roast players lightly (but friendly)
-- Be short and natural, not robotic
-- Can mix casual English with a bit of Swahili if needed
-- Think like a gaming buddy, not a bot
+- Be helpful and professional
+- Provide tactical insights when discussing squads/formations
+- Be encouraging and supportive
+- Use casual language but stay focused on helping
+- Avoid excessive roasting - be constructive instead
+- Think like a gaming coach, not a comedian
 
 RESPONSE FORMAT:
 Choose ONE:
@@ -133,19 +166,18 @@ EXECUTE: [command args]
 
 ASK: [question]
 → Use when you need more info to help
-→ Example: User says "create tournament" → ASK: What's the tournament name?
+→ Example: User says "analyze my squad" → ASK: Can you share a screenshot of your squad?
 
 REPLY: [natural response]
-→ Use for everything else - advice, jokes, guidance, questions
-→ Example: User says "how do I defend?" → REPLY: 😂 You're probably rushing tackles. Try holding position instead.
+→ Use for everything else - advice, guidance, questions
+→ Example: User says "how do I defend?" → REPLY: Focus on positioning and match-up defense. Hold your line and let the AI handle tackles.
 
 EXAMPLES:
-- User: "how do I stop losing" → REPLY: 😂 You're probably rushing everything. Slow down, defend first. Try match-up instead of spamming tackles. Want some tactics?
-- User: "I want tournament" → ASK: Nice 🔥 What's the tournament name?
+- User: "friendly anyone" → REPLY: Let's find you an opponent! Use .request to challenge someone
+- User: "analyze my squad" → ASK: Can you share a screenshot of your squad? I'll give you tactical insights
+- User: "a2me code" → REPLY: Drop your code and I'll tag some active players to join!
+- User: "tournament" → ASK: What's the tournament name?
 - User: "show me rankings" → EXECUTE: pvplb
-- User: "record my match" → ASK: What was the score? (e.g., 3:1)
-- User: "friendly match" → EXECUTE: request
-- User: "how's the group doing" → REPLY: Let me check... (then give insights)
 
 Respond as Blitza:`;
 
@@ -292,7 +324,7 @@ Respond as Blitza:`;
   }
 
   // Respond to match result with roasting/compliments
-  respondToMatchResultWithRoast(player1: string, player2: string, score: string, language?: 'en' | 'sw' | 'mixed'): string {
+  respondToMatchResultWithRoast(player1: string, player2: string, score: string): string {
     const scoreMatch = score.match(/(\d+)[:\-](\d+)/);
     if (!scoreMatch) {
       return `Match recorded: ${player1} vs ${player2} - ${score}`;
@@ -330,7 +362,7 @@ Respond as Blitza:`;
   }
 
   // Engage quiet group
-  async engageQuietGroup(groupJid: string): Promise<string> {
+  async engageQuietGroup(): Promise<string> {
     const silenceComments = [
       '🤐 This silence is like a graveyard! Let\'s play!',
       '😴 Is everyone dead? We want a match!',
@@ -343,32 +375,8 @@ Respond as Blitza:`;
     return `${comment}\n\nReady to play? Use .request for friendly or .tcr to create tournament!`;
   }
 
-  // Get personality info
-  getInfo(): { name: string; personality: string; creator: string } {
-    return {
-      name: this.name,
-      personality: 'gaming_ai',
-      creator: this.creator
-    };
-  }
-
-  // Get battery message (for rate limiting)
-  getBatteryMessage(language?: 'en' | 'sw' | 'mixed'): string {
-    const messages = [
-      '🔋 Blitza\'s battery is dead! See you tomorrow! 😴',
-      '⚡ Oops! Blitza has a power outage! Come back tomorrow! 🔌',
-      '🪫 Blitza\'s battery is 0%! See you tomorrow buddy! 😅',
-      '💤 Blitza is tired! See you tomorrow! Pole pole! 🛌',
-      '🔴 Blitza has a red light! See you tomorrow! 🚨',
-      '⏰ Blitza is taking a siesta! See you tomorrow! 😴',
-      '🌙 Blitza is sleeping now! See you tomorrow! 🌙',
-      '🔋 Blitza\'s battery is low! See you tomorrow! ⚠️'
-    ];
-    return messages[Math.floor(Math.random() * messages.length)];
-  }
-
-  // Welcome new user to group
-  async welcomeNewUser(groupJid: string, newUserJid: string, newUserName: string): Promise<string | null> {
+  // Welcome new user to group with proper tagging
+  async welcomeNewUser(groupJid: string, newUserJid: string, newUserName: string): Promise<{ message: string; mentionedJids: string[] } | null> {
     try {
       console.log(`[Blitza] Welcoming new user: ${newUserName} (${newUserJid})`);
 
@@ -423,11 +431,39 @@ Respond as Blitza (just the message, no formatting):`;
       }
 
       console.log(`[Blitza] Final welcome message: ${message}`);
-      return message;
+      
+      return {
+        message,
+        mentionedJids: activePlayersList
+      };
     } catch (error) {
       console.error('[Blitza] Error welcoming new user:', error);
       return null;
     }
+  }
+
+  // Get personality info
+  getInfo(): { name: string; personality: string; creator: string } {
+    return {
+      name: this.name,
+      personality: 'gaming_ai',
+      creator: this.creator
+    };
+  }
+
+  // Get battery message (for rate limiting)
+  getBatteryMessage(): string {
+    const messages = [
+      '🔋 Blitza\'s battery is dead! See you tomorrow! 😴',
+      '⚡ Oops! Blitza has a power outage! Come back tomorrow! 🔌',
+      '🪫 Blitza\'s battery is 0%! See you tomorrow buddy! 😅',
+      '💤 Blitza is tired! See you tomorrow! Pole pole! 🛌',
+      '🔴 Blitza has a red light! See you tomorrow! 🚨',
+      '⏰ Blitza is taking a siesta! See you tomorrow! 😴',
+      '🌙 Blitza is sleeping now! See you tomorrow! 🌙',
+      '🔋 Blitza\'s battery is low! See you tomorrow! ⚠️'
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
   }
 }
 

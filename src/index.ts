@@ -66,30 +66,30 @@ async function main() {
             friendlyRequestManager.cleanup?.();
         });
 
-        // Kasongo engagement - every 2 hours, engage quiet groups
-        cron.schedule('0 */2 * * *', async () => {
-            try {
-                console.log('🤖 Blitza: Checking for quiet groups...');
-                const { blitzaPersonality } = await import('./services/blitza-personality');
-                const { chatFlowAnalyzer } = await import('./services/chat-flow-analyzer');
-                
-                // Get all tracked groups
-                const allFlows = chatFlowAnalyzer.getAllFlows();
-                for (const [groupJid] of allFlows) {
-                    if (blitzaPersonality.isRoomQuiet(groupJid)) {
-                        const message = await blitzaPersonality.engageQuietGroup(groupJid);
-                        try {
-                            await waClient.sendMessage(groupJid, message);
-                            console.log(`🤖 Blitza: Engaged quiet group ${groupJid}`);
-                        } catch (error) {
-                            console.error(`Error sending Blitza message to ${groupJid}:`, error);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error in Blitza engagement task:', error);
-            }
-        });
+        // DISABLED: Quiet room engagement - user requested no automatic messages when group is quiet
+        // cron.schedule('0 */2 * * *', async () => {
+        //     try {
+        //         console.log('🤖 Blitza: Checking for quiet groups...');
+        //         const { blitzaPersonality } = await import('./services/blitza-personality');
+        //         const { chatFlowAnalyzer } = await import('./services/chat-flow-analyzer');
+        //         
+        //         // Get all tracked groups
+        //         const allFlows = chatFlowAnalyzer.getAllFlows();
+        //         for (const [groupJid] of allFlows) {
+        //             if (blitzaPersonality.isRoomQuiet(groupJid)) {
+        //                 const message = await blitzaPersonality.engageQuietGroup(groupJid);
+        //                 try {
+        //                     await waClient.sendMessage(groupJid, message);
+        //                     console.log(`🤖 Blitza: Engaged quiet group ${groupJid}`);
+        //                 } catch (error) {
+        //                     console.error(`Error sending Blitza message to ${groupJid}:`, error);
+        //                 }
+        //             }
+        //         }
+        //     } catch (error) {
+        //         console.error('Error in Blitza engagement task:', error);
+        //     }
+        // });
 
         // Daily stats reset (optional)
         cron.schedule('0 0 * * *', async () => {
