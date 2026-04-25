@@ -35,19 +35,6 @@ const MEMORY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
-// Gaming keywords that trigger Blitza
-const GAMING_KEYWORDS = [
-  'friendly', 'match', 'play', 'tournament', 'code', 'anyone', 'challenge',
-  'kucheza', 'mchezo', 'tournament', 'request', 'accept', 'decline',
-  'leaderboard', 'stats', 'score', 'win', 'lose', 'game',
-  'squad', 'team', 'formation', 'tactics', 'analyze', 'review', 'lineup'
-];
-
-// Response frequency control
-const RESPONSE_COOLDOWN = 30000; // 30 seconds between responses per user
-const KEYWORD_RESPONSE_CHANCE = 0.4; // 40% chance to respond to keywords (not mentioned)
-const userLastResponseTime = new Map<string, number>();
-
 class BlitzaPersonality {
   private name: string = 'Blitza';
   private creator: string = 'Mido D3V';
@@ -69,28 +56,30 @@ class BlitzaPersonality {
       const userMessage = context.messageText.toLowerCase();
       const state = this.getConversationState(context.senderJid);
 
-      // Check if Blitza is mentioned OR user is in active conversation OR message has gaming keywords
-      const isMentioned = userMessage.includes('blitza');
+      // ONLY respond in these specific cases:
+      const isMentionedAsBlitza = userMessage.includes('blitza');
+      
+      // Team/squad review: has image AND mentions squad/team/formation/lineup/analyze/review
+      const isTeamReviewWithImage = (userMessage.includes('squad') || userMessage.includes('team') || userMessage.includes('formation') || userMessage.includes('lineup') || userMessage.includes('analyze') || userMessage.includes('review')) && context.hasImage;
+      
+      // Score review: has image AND (mentions score/result OR just has image with numbers like "3:1")
+      const hasScorePattern = /\d+[:\-]\d+/.test(userMessage); // Matches patterns like "3:1" or "2-0"
+      const isScoreReviewWithImage = context.hasImage && (userMessage.includes('score') || userMessage.includes('result') || userMessage.includes('review') || userMessage.includes('analyze') || hasScorePattern);
+      
       const inConversation = state.awaitingData;
-      const hasGamingKeyword = GAMING_KEYWORDS.some(keyword => userMessage.includes(keyword));
 
-      // If not mentioned and not in conversation, apply frequency limiting
-      if (!isMentioned && !inConversation && hasGamingKeyword) {
-        // Check if we've responded recently to this user
-        const lastResponse = userLastResponseTime.get(context.senderJid) || 0;
-        const timeSinceLastResponse = Date.now() - lastResponse;
+      // Don't respond to: friendly requests, "code", random keywords
+      const shouldIgnore = userMessage.includes('friendly') || userMessage.includes('code') || userMessage.includes('anyone') || userMessage.includes('match') || userMessage.includes('play') || userMessage.includes('tournament') || userMessage.includes('request');
 
-        // Only respond if enough time has passed AND random chance succeeds
-        if (timeSinceLastResponse < RESPONSE_COOLDOWN || Math.random() > KEYWORD_RESPONSE_CHANCE) {
-          console.log(`[Blitza] Skipping response (cooldown or chance failed)`);
-          return null;
-        }
-
-        // Update last response time
-        userLastResponseTime.set(context.senderJid, Date.now());
+      // If it's a friendly/code/match request, don't respond
+      if (shouldIgnore && !isMentionedAsBlitza && !isTeamReviewWithImage && !isScoreReviewWithImage) {
+        console.log(`[Blitza] Ignoring message (friendly/code/match request)`);
+        return null;
       }
 
-      if (!isMentioned && !inConversation && !hasGamingKeyword) {
+      // Only respond if: mentioned as Blitza OR team review with image OR score review with image OR in conversation
+      if (!isMentionedAsBlitza && !isTeamReviewWithImage && !isScoreReviewWithImage && !inConversation) {
+        console.log(`[Blitza] Not responding (no trigger)`);
         return null;
       }
 
@@ -140,9 +129,13 @@ class BlitzaPersonality {
         .map(cmd => `${cmd.name}: ${cmd.description}`)
         .join('\n');
 
-      const imageContext = context.hasImage ? '\n\nNOTE: User has attached an image. If they ask about squad analysis, formation, or lineup review, acknowledge the image and provide tactical insights.' : '';
+      const imageContext = context.hasImage ? '\n\nNOTE: User has attached an image. Analyze the squad/formation or match result shown in the image.' : '';
 
-      const prompt = `You are Blitza, a professional eFootball gaming assistant and tactical coach. Your role is to help players improve and have fun.
+      const prompt = `You are Blitza, a professional eFootball tactical coach. You only respond when:
+1. User mentions "Blitza" (any case)
+2. User asks for squad/team/formation analysis WITH an image
+3. User sends a match result image (with score like 3:1) or asks for review/analysis WITH an image
+4. User asks you a direct question
 
 AVAILABLE COMMANDS:
 ${commandsList}
@@ -150,36 +143,36 @@ ${commandsList}
 USER MESSAGE: "${userMessage}"${imageContext}
 
 CORE RULES - FOLLOW STRICTLY:
-- NEVER roast or mock players - be encouraging instead
-- NEVER make fun of new players - welcome them warmly
-- Be professional, helpful, and supportive
-- Provide tactical insights and coaching advice
-- Use casual, friendly language but stay constructive
-- Think like a mentor/coach, not a comedian
-- Keep responses short and focused
+- ONLY respond to the specific triggers above
+- NEVER respond to friendly requests, "code", "match", "play", "tournament", "anyone"
+- Be concise and direct - no spam
+- Provide tactical insights when analyzing squads or match results
+- Suggest improvements for gaming
+- Answer questions when asked
+- Keep responses short (2-3 sentences max)
 
 RESPONSE FORMAT:
 Choose ONE:
 
 EXECUTE: [command args]
-→ Use when user clearly wants to run a command
+→ Use ONLY if user clearly wants to run a command
 → Example: User says "show leaderboard" → EXECUTE: pvplb
 
 ASK: [question]
-→ Use when you need more info to help
-→ Example: User says "analyze my squad" → ASK: Can you share a screenshot of your squad?
+→ Use ONLY if you need more info
+→ Example: User says "analyze my squad" but no image → ASK: Can you share a screenshot?
 
 REPLY: [natural response]
-→ Use for everything else - advice, guidance, questions
-→ Example: User says "how do I defend?" → REPLY: Focus on positioning and match-up defense. Hold your line and let the AI handle tackles.
+→ Use for everything else
+→ Example: User says "how do I defend?" → REPLY: Focus on positioning and match-up defense.
 
 EXAMPLES:
-- User: "anyone?" → REPLY: Let's go! Use .request to find an opponent or drop your code and I'll tag active players
-- User: "new player joined" → REPLY: Welcome to the squad! 🎮 Check out .help to see what you can do
-- User: "analyze my squad" → ASK: Can you share a screenshot of your squad? I'll give you tactical insights
-- User: "a2me code" → REPLY: Drop your code and I'll tag some active players to join!
-- User: "tournament" → ASK: What's the tournament name?
-- User: "show me rankings" → EXECUTE: pvplb
+- User: "Blitza how do I improve?" → REPLY: Work on your positioning and defensive timing. Match-up defense is key.
+- User: "analyze my squad" + image → REPLY: Your formation looks solid. Consider adjusting your midfield for better balance.
+- User: "3:1" + image → REPLY: Good win! You controlled the match well. Work on your defensive positioning.
+- User: "review this" + image → REPLY: Nice performance! Your tactics were solid.
+- User: "friendly anyone" → (NO RESPONSE - ignore)
+- User: "code" → (NO RESPONSE - ignore)
 
 Respond as Blitza:`;
 
