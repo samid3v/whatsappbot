@@ -89,6 +89,15 @@ export class MessageHandler {
 
                 // Get user role
                 const userRole = await roleManager.getUserRole(senderJid);
+                
+                // Check WhatsApp group admin status
+                let isWhatsAppAdmin = false;
+                if (isGroup) {
+                    isWhatsAppAdmin = await roleManager.isGroupAdmin(jid, senderJid);
+                }
+                
+                // User is admin if they're WhatsApp admin OR have admin role in database
+                const isAdmin = userRole === 'admin' || isWhatsAppAdmin;
 
                 // Check if user is muted - must check AFTER user is in database
                 console.log(`[MessageHandler] Checking mute for: ${senderJid}`);
@@ -140,7 +149,8 @@ export class MessageHandler {
                 }
 
                 // Check for link in message
-                if (text && shouldWarnForLink(text, userRole)) {
+                const roleForLinkCheck = isAdmin ? 'admin' : userRole;
+                if (text && shouldWarnForLink(text, roleForLinkCheck)) {
                     console.log(`[LinkSpam] Link detected from ${senderJid}`);
 
                     // Delete the message with link
