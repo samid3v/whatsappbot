@@ -1,7 +1,9 @@
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataPath = path.join(__dirname, '../../data');
 if (!fs.existsSync(dataPath)) {
   fs.mkdirSync(dataPath, { recursive: true });

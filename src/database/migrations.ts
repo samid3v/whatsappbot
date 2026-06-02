@@ -1,5 +1,9 @@
 import Database from 'better-sqlite3';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ES module compatibility
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dataPath = path.join(__dirname, '../../data');
 const dbPath = path.join(dataPath, 'bot.db');

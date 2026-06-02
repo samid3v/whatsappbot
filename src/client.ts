@@ -9,9 +9,13 @@ import qrcodeTerminal from 'qrcode-terminal';
 import pino from 'pino';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import { userOps } from './database/db';
 import { formatJid } from './utils/helpers';
+
+// ES module compatibility
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Suppressed logger to filter out Baileys noise
 const suppressedLogger = pino({

@@ -1,6 +1,10 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { BotConfig } from '../types';
+
+// ES module compatibility
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 dotenv.config();
 
