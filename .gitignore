@@ -37,6 +37,7 @@ desktop.ini
 *.swp
 *.swo
 *~
+.kilocode/
 
 # Temp files
 tmp/
