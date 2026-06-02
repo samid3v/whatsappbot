@@ -2,6 +2,7 @@
   "name": "whatsapp-efootball-bot",
   "version": "1.0.0",
   "description": "WhatsApp group management bot for eFootball gaming communities",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
